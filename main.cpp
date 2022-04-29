@@ -98,7 +98,7 @@ public:
 	[[nodiscard]] vk::PresentModeKHR const &get_present_mode() const { return present_mode.value(); }
 
 	// Window vs UniqueWindow ?
-	[[nodiscard]] vk::Extent2D get_extent(vkfw::UniqueWindow const &window) const {
+	vk::Extent2D get_extent(vkfw::UniqueWindow const &window) const {
 		if (surface_capabilities.currentExtent == vk::Extent2D{
 			.width = 0xFFFFFFFF,
 			.height = 0xFFFFFFFF,
@@ -115,8 +115,6 @@ public:
 	}
 
 private:
-	// todo still make these more efficient
-
 	static bool check_supports_all_extensions(vk::raii::PhysicalDevice const &physical_device) {
 		std::vector<vk::ExtensionProperties> extensions_properties = physical_device.enumerateDeviceExtensionProperties();
 		return std::ranges::all_of(
@@ -137,56 +135,41 @@ private:
 		std::optional<std::uint32_t> present_queue_family_index;
 
 		QueueFamilyIndices(vk::raii::PhysicalDevice const &physical_device, vk::raii::SurfaceKHR const &surface) {
-			std::vector<vk::QueueFamilyProperties> queue_family_properties = physical_device.getQueueFamilyProperties();
-			auto is_graphics_supported = [&](uint32_t queue_family_index) {
-				return static_cast<bool>(queue_family_properties[queue_family_index].queueFlags & vk::QueueFlagBits::eGraphics);
-			};
-			auto is_surface_supported = [&](uint32_t queue_family_index) {
-				return static_cast<bool>(physical_device.getSurfaceSupportKHR(queue_family_index, *surface));
-			};
-			auto usable_queue_families = std::views::iota(0u, queue_family_properties.size())
-			                             | std::views::filter(is_graphics_supported)
-			                             | std::views::filter(is_surface_supported);
-			if (!std::ranges::empty(usable_queue_families)) {
-				graphics_queue_family_index = usable_queue_families.front();
-				present_queue_family_index = usable_queue_families.front();
-			} else {
-				auto graphics_queue_families = std::views::iota(0u, queue_family_properties.size())
-				                               | std::views::filter(is_graphics_supported);
-				if (!std::ranges::empty(graphics_queue_families))
-					graphics_queue_family_index = graphics_queue_families.front();
-
-				auto present_queue_families = std::views::iota(0u, queue_family_properties.size())
-				                              | std::views::filter(is_surface_supported);
-				if (!std::ranges::empty(present_queue_families))
-					present_queue_family_index = present_queue_families.front();
+			std::vector<vk::QueueFamilyProperties> queue_families_properties = physical_device.getQueueFamilyProperties();
+			for (std::uint32_t queue_family_index = 0; queue_family_index < queue_families_properties.size(); ++queue_family_index) {
+				bool supports_graphics = static_cast<bool>(queue_families_properties[queue_family_index].queueFlags & vk::QueueFlagBits::eGraphics);
+				bool supports_present = physical_device.getSurfaceSupportKHR(queue_family_index, *surface);
+				if (supports_graphics && supports_present) {
+					graphics_queue_family_index = present_queue_family_index = queue_family_index;
+					break;
+				}
+				if (supports_graphics && !graphics_queue_family_index.has_value())
+					graphics_queue_family_index = queue_family_index;
+				if (supports_present && !present_queue_family_index.has_value())
+					present_queue_family_index = queue_family_index;
 			}
 		}
 	};
 
-	static vk::SurfaceFormatKHR choose_surface_format(vk::raii::PhysicalDevice const &physical_device, vk::raii::SurfaceKHR const &surface) {
+	static std::optional<vk::SurfaceFormatKHR> choose_surface_format(vk::raii::PhysicalDevice const &physical_device, vk::raii::SurfaceKHR const &surface) {
 		std::vector<vk::SurfaceFormatKHR> surface_formats = physical_device.getSurfaceFormatsKHR(*surface);
 		if (surface_formats.empty())
-			throw std::runtime_error("there weren't any surface formats to choose from.");
-		// should this be std::out_of_range ?
-		for (vk::SurfaceFormatKHR const &surface_format: surface_formats) {
+			return std::nullopt;
+		for (vk::SurfaceFormatKHR const &surface_format: surface_formats)
 			if (surface_format.format == vk::Format::eB8G8R8A8Srgb
 			    && surface_format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear)
 				return surface_format;
-		}
 		return surface_formats.front();
 		// todo mess around with this
 	}
 
-	static vk::PresentModeKHR choose_present_mode(vk::raii::PhysicalDevice const &physical_device, vk::raii::SurfaceKHR const &surface) {
+	static std::optional<vk::PresentModeKHR> choose_present_mode(vk::raii::PhysicalDevice const &physical_device, vk::raii::SurfaceKHR const &surface) {
 		std::vector<vk::PresentModeKHR> present_modes = physical_device.getSurfacePresentModesKHR(*surface);
 		if (present_modes.empty())
-			throw std::runtime_error("there weren't any present modes to choose from.");
-		// should this be std::out_of_range ?
-		for (vk::PresentModeKHR const &present_mode: present_modes) {
+			return std::nullopt;
+		for (vk::PresentModeKHR const &present_mode: present_modes)
 			if (present_mode == vk::PresentModeKHR::eMailbox)
 				return present_mode;
-		}
 		return vk::PresentModeKHR::eFifo;
 		// todo mess around with this e.g. immediate, fifo relaxed
 		// todo prefer fifo for low energy consumption
@@ -196,8 +179,8 @@ private:
 		bool const &supports_all_extensions,
 		QueueFamilyIndices const &queue_family_indices,
 		vk::SurfaceCapabilitiesKHR const &surface_capabilities,
-		vk::SurfaceFormatKHR const &surface_format,
-		vk::PresentModeKHR const &present_mode
+		std::optional<vk::SurfaceFormatKHR> const &surface_format,
+		std::optional<vk::PresentModeKHR> const &present_mode
 	) : supports_all_extensions{supports_all_extensions},
 	    graphics_queue_family_index{queue_family_indices.graphics_queue_family_index},
 	    present_queue_family_index{queue_family_indices.present_queue_family_index},
