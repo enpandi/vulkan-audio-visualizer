@@ -1,15 +1,10 @@
-#include <algorithm>
-#include <array>
-#include <chrono>
-#include <cstdint>
 #include <fstream>
-#include <functional>
 #include <iomanip>
-#include <ios>
 #include <iostream>
-#include <limits>
+#include <optional>
 #include <ranges>
-#include <utility>
+#include <set>
+// more includes may be necessary
 
 #define VULKAN_HPP_NO_CONSTRUCTORS
 #define VULKAN_HPP_NO_SETTERS
@@ -29,9 +24,7 @@ static std::string const fragment_shader_file_name = "shaders/shader.frag.spv";
 namespace timer {
 	std::chrono::time_point<std::chrono::steady_clock> start_time;
 
-	void start() {
-		start_time = std::chrono::steady_clock::now();
-	}
+	void start() { start_time = std::chrono::steady_clock::now(); }
 
 	void stop(char const *message) {
 		auto stop_time = std::chrono::steady_clock::now();
@@ -57,9 +50,9 @@ vk::raii::Instance vk_create_instance(vk::raii::Context const &context) {
 }
 
 class SwapchainInfo {
-	bool const supports_all_extensions;
-	std::optional<std::uint32_t> const graphics_queue_family_index;
-	std::optional<std::uint32_t> const present_queue_family_index;
+	bool const supports_all_required_extensions;
+	std::optional<uint32_t> const graphics_queue_family_index;
+	std::optional<uint32_t> const present_queue_family_index;
 	vk::SurfaceCapabilitiesKHR const surface_capabilities;
 	std::optional<vk::SurfaceFormatKHR> const surface_format;
 	std::optional<vk::PresentModeKHR> const present_mode;
@@ -78,7 +71,7 @@ public:
 	) {}
 
 	[[nodiscard]] bool is_compatible() const {
-		return supports_all_extensions
+		return supports_all_required_extensions
 		       && graphics_queue_family_index.has_value()
 		       && present_queue_family_index.has_value()
 		       && surface_format.has_value()
@@ -87,9 +80,9 @@ public:
 
 	// prefer value() over operator* because std::bad_optional_access seems like a useful thing to throw
 
-	[[nodiscard]] std::uint32_t const &get_graphics_queue_family_index() const { return graphics_queue_family_index.value(); }
+	[[nodiscard]] uint32_t const &get_graphics_queue_family_index() const { return graphics_queue_family_index.value(); }
 
-	[[nodiscard]] std::uint32_t const &get_present_queue_family_index() const { return present_queue_family_index.value(); }
+	[[nodiscard]] uint32_t const &get_present_queue_family_index() const { return present_queue_family_index.value(); }
 
 	[[nodiscard]] vk::SurfaceCapabilitiesKHR const &get_surface_capabilities() const { return surface_capabilities; }
 
@@ -98,7 +91,7 @@ public:
 	[[nodiscard]] vk::PresentModeKHR const &get_present_mode() const { return present_mode.value(); }
 
 	// Window vs UniqueWindow ?
-	vk::Extent2D get_extent(vkfw::UniqueWindow const &window) const {
+	[[nodiscard]] vk::Extent2D get_extent(vkfw::UniqueWindow const &window) const {
 		if (surface_capabilities.currentExtent == vk::Extent2D{
 			.width = 0xFFFFFFFF,
 			.height = 0xFFFFFFFF,
@@ -131,12 +124,12 @@ private:
 	}
 
 	struct QueueFamilyIndices {
-		std::optional<std::uint32_t> graphics_queue_family_index;
-		std::optional<std::uint32_t> present_queue_family_index;
+		std::optional<uint32_t> graphics_queue_family_index;
+		std::optional<uint32_t> present_queue_family_index;
 
 		QueueFamilyIndices(vk::raii::PhysicalDevice const &physical_device, vk::raii::SurfaceKHR const &surface) {
 			std::vector<vk::QueueFamilyProperties> queue_families_properties = physical_device.getQueueFamilyProperties();
-			for (std::uint32_t queue_family_index = 0; queue_family_index < queue_families_properties.size(); ++queue_family_index) {
+			for (uint32_t queue_family_index = 0; queue_family_index < queue_families_properties.size(); ++queue_family_index) {
 				bool supports_graphics = static_cast<bool>(queue_families_properties[queue_family_index].queueFlags & vk::QueueFlagBits::eGraphics);
 				bool supports_present = physical_device.getSurfaceSupportKHR(queue_family_index, *surface);
 				if (supports_graphics && supports_present) {
@@ -155,7 +148,7 @@ private:
 		std::vector<vk::SurfaceFormatKHR> surface_formats = physical_device.getSurfaceFormatsKHR(*surface);
 		if (surface_formats.empty())
 			return std::nullopt;
-		for (vk::SurfaceFormatKHR const &surface_format: surface_formats)
+		for (vk::SurfaceFormatKHR const &surface_format : surface_formats)
 			if (surface_format.format == vk::Format::eB8G8R8A8Srgb
 			    && surface_format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear)
 				return surface_format;
@@ -167,7 +160,7 @@ private:
 		std::vector<vk::PresentModeKHR> present_modes = physical_device.getSurfacePresentModesKHR(*surface);
 		if (present_modes.empty())
 			return std::nullopt;
-		for (vk::PresentModeKHR const &present_mode: present_modes)
+		for (vk::PresentModeKHR const &present_mode : present_modes)
 			if (present_mode == vk::PresentModeKHR::eMailbox)
 				return present_mode;
 		return vk::PresentModeKHR::eFifo;
@@ -181,7 +174,7 @@ private:
 		vk::SurfaceCapabilitiesKHR const &surface_capabilities,
 		std::optional<vk::SurfaceFormatKHR> const &surface_format,
 		std::optional<vk::PresentModeKHR> const &present_mode
-	) : supports_all_extensions{supports_all_extensions},
+	) : supports_all_required_extensions{supports_all_extensions},
 	    graphics_queue_family_index{queue_family_indices.graphics_queue_family_index},
 	    present_queue_family_index{queue_family_indices.present_queue_family_index},
 	    surface_capabilities{surface_capabilities},
@@ -199,36 +192,32 @@ std::pair<vk::raii::PhysicalDevice, SwapchainInfo> vk_choose_physical_device(vk:
 	               });
 	auto usable_physical_device_indices = std::views::iota(0u, physical_devices.size())
 	                                      | std::views::filter(
-		[&](std::uint32_t const &physical_device_index) {
+		[&](uint32_t const &physical_device_index) {
 			return swapchain_infos[physical_device_index].is_compatible();
 		});
 	if (!usable_physical_device_indices)
 		throw std::runtime_error("vulkan failed to find usable physical devices.");
-	for (std::uint32_t physical_device_index: usable_physical_device_indices)
+	for (uint32_t physical_device_index : usable_physical_device_indices)
 		if (physical_devices[physical_device_index].getProperties().deviceType == vk::PhysicalDeviceType::eDiscreteGpu)
 			return {std::move(physical_devices[physical_device_index]), swapchain_infos[physical_device_index]};
 	return {std::move(physical_devices.front()), swapchain_infos.front()};
 }
 
-vk::raii::Device vk_create_device(vk::raii::PhysicalDevice const &physical_device) {
-	std::vector<vk::QueueFamilyProperties> queue_families_properties = physical_device.getQueueFamilyProperties();
-	uint32_t graphics_queue_family_index = std::distance(
-		queue_families_properties.begin(),
-		std::ranges::find_if(
-			queue_families_properties,
-			[](vk::QueueFamilyProperties const &queue_family_properties) {
-				return static_cast<bool>(queue_family_properties.queueFlags & vk::QueueFlagBits::eGraphics);
-			}));
+vk::raii::Device vk_create_device(vk::raii::PhysicalDevice const &physical_device, SwapchainInfo const &swapchain_info) {
+	std::vector<vk::DeviceQueueCreateInfo> device_queue_create_infos;
 	float queue_priority = 0.0f;
-	vk::DeviceQueueCreateInfo device_queue_create_info{
-		.queueFamilyIndex = graphics_queue_family_index,
-		.queueCount = 1,
-		.pQueuePriorities = &queue_priority,
-	};
+	for (uint32_t queue_family_index : std::set<uint32_t>{
+		swapchain_info.get_graphics_queue_family_index(), swapchain_info.get_present_queue_family_index()})
+		device_queue_create_infos.push_back(
+			{
+				.queueFamilyIndex = queue_family_index,
+				.queueCount = 1,
+				.pQueuePriorities = &queue_priority,
+			});
 	vk::PhysicalDeviceFeatures enabled_features;
 	vk::DeviceCreateInfo device_create_info{
-		.queueCreateInfoCount = 1,
-		.pQueueCreateInfos = &device_queue_create_info,
+		.queueCreateInfoCount = static_cast<uint32_t>(device_queue_create_infos.size()),
+		.pQueueCreateInfos = device_queue_create_infos.data(),
 		.enabledLayerCount = vk_global_layers.size(),
 		.ppEnabledLayerNames = vk_global_layers.data(),
 		.enabledExtensionCount = vk_device_extensions.size(),
@@ -244,8 +233,8 @@ vk::raii::SwapchainKHR vk_create_swapchain(
 	SwapchainInfo const &swapchain_info,
 	vk::Extent2D const &extent
 ) {
-	std::uint32_t const &graphics_queue_family_index = swapchain_info.get_graphics_queue_family_index();
-	std::uint32_t const &present_queue_family_index = swapchain_info.get_present_queue_family_index();
+	uint32_t const &graphics_queue_family_index = swapchain_info.get_graphics_queue_family_index();
+	uint32_t const &present_queue_family_index = swapchain_info.get_present_queue_family_index();
 	std::array queue_family_index_array = {graphics_queue_family_index, present_queue_family_index};
 	vk::SurfaceCapabilitiesKHR const &surface_capabilities = swapchain_info.get_surface_capabilities();
 	vk::SwapchainCreateInfoKHR swapchain_create_info{
@@ -274,7 +263,7 @@ vk::raii::SwapchainKHR vk_create_swapchain(
 std::vector<vk::raii::ImageView> vk_create_image_views(std::vector<VkImage> const &images, vk::raii::Device const &device, vk::Format const &format) {
 	std::vector<vk::raii::ImageView> image_views;
 	image_views.reserve(images.size());
-	for (VkImage const &image: images) {
+	for (VkImage const &image : images) {
 		vk::ImageViewCreateInfo image_view_create_info{
 			.image = image,
 			.viewType = vk::ImageViewType::e2D,
@@ -466,7 +455,7 @@ vk_create_framebuffers(
 ) {
 	std::vector<vk::raii::Framebuffer> framebuffers;
 	framebuffers.reserve(image_views.size());
-	for (vk::raii::ImageView const &image_view: image_views) {
+	for (vk::raii::ImageView const &image_view : image_views) {
 		std::array attachments{*image_view};
 		vk::FramebufferCreateInfo framebuffer_create_info{
 			.renderPass = *render_pass,
@@ -508,11 +497,7 @@ void vk_record_command_buffer(
 ) {
 	vk::CommandBufferBeginInfo command_buffer_begin_info{};
 	command_buffer.begin(command_buffer_begin_info);
-	vk::ClearValue clear_value{
-		.color{
-			.float32 = std::array{0.0f, 0.0f, 0.0f, 1.0f}
-		},
-	};
+	vk::ClearValue clear_value{.color{.float32 = std::array{0.0f, 0.0f, 0.0f, 1.0f}}};
 	vk::RenderPassBeginInfo render_pass_begin_info{
 		.renderPass = *render_pass,
 		.framebuffer = *framebuffer,
@@ -534,45 +519,32 @@ int main() {
 	vkfw::setErrorCallback(
 		[](int error_code, char const *const description) {
 			std::cerr << "glfw error callback: error code " << error_code << ", " << description << std::endl;
-		}
-	);
+		});
 	try {
 		timer::start();
 		auto const vkfw_instance = vkfw::initUnique();
-		vkfw::UniqueWindow const vkfw_window
-			= vkfw::createWindowUnique(640, 480, "window name", vkfw::WindowHints{.resizable = false});
+		vkfw::UniqueWindow const vkfw_window = vkfw::createWindowUnique(640, 480, "window name", vkfw::WindowHints{.resizable = false});
 		vk::raii::Context const vk_context;
-		vk::raii::Instance const vk_instance
-			= vk_create_instance(vk_context);
+		vk::raii::Instance const vk_instance = vk_create_instance(vk_context);
 		// mixing normal and unique and raii is weird
 		vk::raii::SurfaceKHR const vk_surface(vk_instance, vkfw::createWindowSurface(*vk_instance, *vkfw_window));
 		auto const[vk_physical_device, vk_swapchain_info] = vk_choose_physical_device(vk_instance, vk_surface);
-		vk::raii::Device const vk_device
-			= vk_create_device(vk_physical_device);
+		vk::raii::Device const vk_device = vk_create_device(vk_physical_device, vk_swapchain_info);
 		// create queues here? or later
 		vk::raii::Queue const vk_graphics_queue(vk_device, vk_swapchain_info.get_graphics_queue_family_index(), 0);
 		vk::raii::Queue const vk_present_queue(vk_device, vk_swapchain_info.get_present_queue_family_index(), 0);
 		vk::Format const &vk_format = vk_swapchain_info.get_surface_format().format;
 		vk::Extent2D const vk_swapchain_extent = vk_swapchain_info.get_extent(vkfw_window);
-		vk::raii::SwapchainKHR const vk_swapchain
-			= vk_create_swapchain(vk_device, vk_surface, vk_swapchain_info, vk_swapchain_extent); // todo refactor?
-		std::vector<VkImage> const vk_images
-			= vk_swapchain.getImages(); // VkImage is a handle, works differently wrt vk::Image
-		std::vector<vk::raii::ImageView> const vk_image_views
-			= vk_create_image_views(vk_images, vk_device, vk_format);
+		vk::raii::SwapchainKHR const vk_swapchain = vk_create_swapchain(vk_device, vk_surface, vk_swapchain_info, vk_swapchain_extent); // todo refactor?
+		std::vector<VkImage> const vk_images = vk_swapchain.getImages(); // VkImage is a handle, works differently wrt vk::Image
+		std::vector<vk::raii::ImageView> const vk_image_views = vk_create_image_views(vk_images, vk_device, vk_format);
 		// todo some of the consts must go
-		vk::raii::PipelineLayout const vk_pipeline_layout
-			= vk_create_pipeline_layout(vk_device);
-		vk::raii::RenderPass const vk_render_pass
-			= vk_create_render_pass(vk_device, vk_format);
-		vk::raii::Pipeline const vk_pipeline
-			= vk_create_pipeline(vk_device, vk_swapchain_extent, vk_pipeline_layout, vk_render_pass);
-		std::vector<vk::raii::Framebuffer> vk_framebuffers
-			= vk_create_framebuffers(vk_device, vk_image_views, vk_render_pass, vk_swapchain_extent);
-		vk::raii::CommandPool vk_command_pool
-			= vk_create_command_pool(vk_device, vk_swapchain_info.get_graphics_queue_family_index());
-		vk::raii::CommandBuffer vk_command_buffer
-			= vk_allocate_command_buffer(vk_device, vk_command_pool);
+		vk::raii::PipelineLayout const vk_pipeline_layout = vk_create_pipeline_layout(vk_device);
+		vk::raii::RenderPass const vk_render_pass = vk_create_render_pass(vk_device, vk_format);
+		vk::raii::Pipeline const vk_pipeline = vk_create_pipeline(vk_device, vk_swapchain_extent, vk_pipeline_layout, vk_render_pass);
+		std::vector<vk::raii::Framebuffer> vk_framebuffers = vk_create_framebuffers(vk_device, vk_image_views, vk_render_pass, vk_swapchain_extent);
+		vk::raii::CommandPool vk_command_pool = vk_create_command_pool(vk_device, vk_swapchain_info.get_graphics_queue_family_index());
+		vk::raii::CommandBuffer vk_command_buffer = vk_allocate_command_buffer(vk_device, vk_command_pool);
 
 		vk::raii::Semaphore vk_image_available_semaphore = vk_device.createSemaphore({});
 		vk::raii::Semaphore vk_render_finished_semaphore = vk_device.createSemaphore({});
