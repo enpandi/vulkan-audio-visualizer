@@ -3,7 +3,7 @@ project(audio_visualizer)
 
 # todo change optimization level in release mode
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Og")
-set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD 20)
 
 add_executable(${PROJECT_NAME} main.cpp audio.cpp graphics.cpp)
 
