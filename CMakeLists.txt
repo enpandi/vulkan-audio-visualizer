@@ -5,7 +5,7 @@ project(audio_visualizer)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Og")
 set(CMAKE_CXX_STANDARD 20)
 
-add_executable(${PROJECT_NAME} main.cpp audio.cpp graphics.cpp)
+add_executable(${PROJECT_NAME} main.cpp graphics.cpp Recorder.cpp Recorder.h)
 
 
 # CMake function for shaders
