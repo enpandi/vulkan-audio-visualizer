@@ -19,17 +19,40 @@ static std::array const vk_device_extensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME}
 static std::string const application_name = "audio visualizer";
 static std::string const vertex_shader_file_name = "shaders/shader.vert.spv";
 static std::string const fragment_shader_file_name = "shaders/shader.frag.spv";
+static constexpr size_t MAX_FRAMES_IN_FLIGHT = 2;
 
 // perf doesn't work on windows
 namespace timer {
 	std::chrono::time_point<std::chrono::steady_clock> start_time;
 
-	void start() { start_time = std::chrono::steady_clock::now(); }
+	void start() {
+		start_time = std::chrono::steady_clock::now();
+	}
 
 	void stop(char const *message) {
 		auto stop_time = std::chrono::steady_clock::now();
 		auto nanos = std::chrono::duration_cast<std::chrono::nanoseconds>(stop_time - start_time).count();
 		std::cout << std::right << std::setw(15) << static_cast<long double>(nanos) / 1e9 << " s - " << message << std::endl;
+	}
+
+	std::chrono::time_point<std::chrono::steady_clock> prev_frame_time;
+	uint64_t frame_count = 0;
+	std::vector<uint64_t> frame_counts(1);
+
+	void frame() {
+		if (!frame_count)
+			prev_frame_time = std::chrono::steady_clock::now();
+		++frame_count;
+		auto now = std::chrono::steady_clock::now();
+		auto nanos = std::chrono::duration_cast<std::chrono::nanoseconds>(now - prev_frame_time).count();
+		if (nanos > 1000000000ll) { // one second
+			frame_counts.push_back(frame_count);
+			prev_frame_time = now;
+		}
+	}
+	void dump_fps() {
+		for (int i=1; i<frame_counts.size(); ++i)
+			std::cout << frame_counts[i] - frame_counts[i-1] << ' ';
 	}
 }
 
@@ -469,7 +492,6 @@ vk_create_framebuffers(
 	}
 	return framebuffers;
 }
-// todo rename extent
 
 vk::raii::CommandPool vk_create_command_pool(vk::raii::Device const &device, uint32_t graphics_queue_family_index) {
 	vk::CommandPoolCreateInfo command_pool_create_info{
@@ -495,6 +517,7 @@ void vk_record_command_buffer(
 	vk::Extent2D const &extent,
 	vk::raii::Pipeline const &pipeline
 ) {
+	command_buffer.reset({});
 	vk::CommandBufferBeginInfo command_buffer_begin_info{};
 	command_buffer.begin(command_buffer_begin_info);
 	vk::ClearValue clear_value{.color{.float32 = std::array{0.0f, 0.0f, 0.0f, 1.0f}}};
@@ -535,7 +558,7 @@ int main() {
 		vk::raii::Queue const vk_present_queue(vk_device, vk_swapchain_info.get_present_queue_family_index(), 0);
 		vk::Format const &vk_format = vk_swapchain_info.get_surface_format().format;
 		vk::Extent2D const vk_swapchain_extent = vk_swapchain_info.get_extent(vkfw_window);
-		vk::raii::SwapchainKHR const vk_swapchain = vk_create_swapchain(vk_device, vk_surface, vk_swapchain_info, vk_swapchain_extent); // todo refactor?
+		vk::raii::SwapchainKHR const vk_swapchain = vk_create_swapchain(vk_device, vk_surface, vk_swapchain_info, vk_swapchain_extent);
 		std::vector<VkImage> const vk_images = vk_swapchain.getImages(); // VkImage is a handle, works differently wrt vk::Image
 		std::vector<vk::raii::ImageView> const vk_image_views = vk_create_image_views(vk_images, vk_device, vk_format);
 		// todo some of the consts must go
@@ -553,38 +576,35 @@ int main() {
 		timer::stop("initialization");
 // todo review subpasses and synchronisation because i am tired
 
+		vk::SubmitInfo graphics_queue_submit_info{
+			.waitSemaphoreCount = 1,
+			.pWaitSemaphores = &*vk_image_available_semaphore,
+			.pWaitDstStageMask = &vk_image_available_semaphore_wait_stage,
+			.commandBufferCount = 1,
+			.pCommandBuffers = &*vk_command_buffer,
+			.signalSemaphoreCount = 1,
+			.pSignalSemaphores = &*vk_render_finished_semaphore,
+		};
+		uint32_t image_index;
+		vk::PresentInfoKHR present_info{
+			.waitSemaphoreCount = 1,
+			.pWaitSemaphores = &*vk_render_finished_semaphore,
+			.swapchainCount = 1,
+			.pSwapchains = &*vk_swapchain,
+			.pImageIndices = &image_index, // todo figure this out
+		};
 		while (!vkfw_window->shouldClose()) {
-			if (vk::Result::eSuccess != vk_device.waitForFences({*vk_in_flight_fence}, true, std::numeric_limits<uint64_t>::max()))
-				throw std::runtime_error("failed to wait for fences");
+			vk_device.waitForFences({*vk_in_flight_fence}, true, std::numeric_limits<uint64_t>::max());
 			vk_device.resetFences({*vk_in_flight_fence});
-			uint32_t image_index = vk_swapchain.acquireNextImage(std::numeric_limits<uint64_t>::max(), *vk_image_available_semaphore, nullptr).second;
-			vk_command_buffer.reset({});
+			image_index = vk_swapchain.acquireNextImage(std::numeric_limits<uint64_t>::max(), *vk_image_available_semaphore, nullptr).second;
 			vk_record_command_buffer(vk_command_buffer, vk_render_pass, vk_framebuffers[image_index], vk_swapchain_extent, vk_pipeline);
-			vk::SubmitInfo submit_info{
-				.waitSemaphoreCount = 1,
-				.pWaitSemaphores = &*vk_image_available_semaphore,
-				.pWaitDstStageMask = &vk_image_available_semaphore_wait_stage,
-				.commandBufferCount = 1,
-				.pCommandBuffers = &*vk_command_buffer,
-				.signalSemaphoreCount = 1,
-				.pSignalSemaphores = &*vk_render_finished_semaphore,
-			};
-			vk_graphics_queue.submit({submit_info}, {*vk_in_flight_fence});
-			vk::PresentInfoKHR present_info{
-				.waitSemaphoreCount = 1,
-				.pWaitSemaphores = &*vk_render_finished_semaphore,
-				.swapchainCount = 1,
-				.pSwapchains = &*vk_swapchain,
-				.pImageIndices = &image_index, // todo figure this out
-			};
-			if (vk::Result::eSuccess != vk_present_queue.presentKHR(present_info))
-				throw std::runtime_error("failed to present");
-			vkfw::waitEvents();
-//			vkfw::pollEvents(); // ??
+			vk_graphics_queue.submit({graphics_queue_submit_info}, {*vk_in_flight_fence});
+			vk_present_queue.presentKHR(present_info);
+			vkfw::pollEvents(); // waitEvents vs pollEvents ?
+			timer::frame();
 		}
-		vk_device.waitIdle();
-
-
+		timer::dump_fps();
+		vk_device.waitIdle(); // wait for everything to finish
 	} catch (std::system_error &err) {
 		std::cerr << "std::system_error: code " << err.code() << ": " << err.what() << std::endl;
 		std::exit(EXIT_FAILURE);
@@ -595,5 +615,4 @@ int main() {
 		std::cerr << "unknown error" << std::endl;
 		std::exit(EXIT_FAILURE);
 	}
-	// todo i have no idea what to catch
 }
