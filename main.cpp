@@ -19,7 +19,7 @@ static std::array const vk_device_extensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME}
 static std::string const application_name = "audio visualizer";
 static std::string const vertex_shader_file_name = "shaders/shader.vert.spv";
 static std::string const fragment_shader_file_name = "shaders/shader.frag.spv";
-static constexpr size_t MAX_FRAMES_IN_FLIGHT = 2;
+static constexpr size_t MAX_FRAMES_IN_FLIGHT = 3;
 
 // perf doesn't work on windows
 namespace timer {
@@ -37,22 +37,25 @@ namespace timer {
 
 	std::chrono::time_point<std::chrono::steady_clock> prev_frame_time;
 	uint64_t frame_count = 0;
-	std::vector<uint64_t> frame_counts(1);
+	std::vector<uint64_t> frame_counts;
 
 	void frame() {
-		if (!frame_count)
+		if (!frame_count) {
 			prev_frame_time = std::chrono::steady_clock::now();
+			frame_counts.emplace_back(0);
+		}
 		++frame_count;
 		auto now = std::chrono::steady_clock::now();
 		auto nanos = std::chrono::duration_cast<std::chrono::nanoseconds>(now - prev_frame_time).count();
 		if (nanos > 1000000000ll) { // one second
-			frame_counts.push_back(frame_count);
 			prev_frame_time = now;
+			frame_counts.emplace_back(frame_count);
 		}
 	}
+
 	void dump_fps() {
-		for (int i=1; i<frame_counts.size(); ++i)
-			std::cout << frame_counts[i] - frame_counts[i-1] << ' ';
+		for (size_t i = 1; i < frame_counts.size(); ++i)
+			std::cout << frame_counts[i] - frame_counts[i - 1] << ' ';
 	}
 }
 
@@ -69,7 +72,8 @@ vk::raii::Instance vk_create_instance(vk::raii::Context const &context) {
 		.enabledExtensionCount = static_cast<uint32_t>(glfw_extensions.size()),
 		.ppEnabledExtensionNames = glfw_extensions.data(),
 	};
-	return context.createInstance(instance_create_info);
+	return {context, instance_create_info};
+//	return context.createInstance(instance_create_info);
 }
 
 class SwapchainInfo {
@@ -247,7 +251,8 @@ vk::raii::Device vk_create_device(vk::raii::PhysicalDevice const &physical_devic
 		.ppEnabledExtensionNames = vk_device_extensions.data(),
 		.pEnabledFeatures = &enabled_features,
 	};
-	return physical_device.createDevice(device_create_info);
+	return {physical_device, device_create_info};
+//	return physical_device.createDevice(device_create_info);
 }
 
 vk::raii::SwapchainKHR vk_create_swapchain(
@@ -280,7 +285,8 @@ vk::raii::SwapchainKHR vk_create_swapchain(
 		.clipped = true,
 //		.oldSwapchain = VK_NULL_HANDLE, // ???
 	};
-	return device.createSwapchainKHR(swapchain_create_info);
+	return {device, swapchain_create_info};
+//	return device.createSwapchainKHR(swapchain_create_info);
 }
 
 std::vector<vk::raii::ImageView> vk_create_image_views(std::vector<VkImage> const &images, vk::raii::Device const &device, vk::Format const &format) {
@@ -326,7 +332,8 @@ vk::raii::PipelineLayout vk_create_pipeline_layout(vk::raii::Device const &devic
 		.setLayoutCount = 0,
 		.pushConstantRangeCount = 0,
 	};
-	return device.createPipelineLayout(pipeline_layout_create_info);
+	return {device, pipeline_layout_create_info};
+//	return device.createPipelineLayout(pipeline_layout_create_info);
 }
 
 vk::raii::RenderPass vk_create_render_pass(vk::raii::Device const &device, vk::Format const &format) {
@@ -367,7 +374,8 @@ vk::raii::RenderPass vk_create_render_pass(vk::raii::Device const &device, vk::F
 		.dependencyCount = 1,
 		.pDependencies = &subpass_dependency,
 	};
-	return device.createRenderPass(render_pass_create_info);
+	return {device, render_pass_create_info};
+//	return device.createRenderPass(render_pass_create_info);
 }
 
 vk::raii::ShaderModule vk_create_shader_module(vk::raii::Device const &device, std::vector<char> const &code_chars) {
@@ -375,7 +383,8 @@ vk::raii::ShaderModule vk_create_shader_module(vk::raii::Device const &device, s
 		.codeSize = code_chars.size(),
 		.pCode = reinterpret_cast<uint32_t const *>(code_chars.data()),
 	};
-	return device.createShaderModule(shader_module_create_info);
+	return {device, shader_module_create_info};
+//	return device.createShaderModule(shader_module_create_info);
 }
 
 vk::raii::Pipeline vk_create_pipeline(
@@ -468,7 +477,8 @@ vk::raii::Pipeline vk_create_pipeline(
 //		.basePipelineHandle,
 //		.basePipelineIndex,
 	};
-	return device.createGraphicsPipeline(nullptr, graphics_pipeline_create_info);
+	return {device, nullptr, graphics_pipeline_create_info};
+//	return device.createGraphicsPipeline(nullptr, graphics_pipeline_create_info);
 }
 
 std::vector<vk::raii::Framebuffer>
@@ -498,7 +508,8 @@ vk::raii::CommandPool vk_create_command_pool(vk::raii::Device const &device, uin
 		.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
 		.queueFamilyIndex = graphics_queue_family_index,
 	};
-	return device.createCommandPool(command_pool_create_info);
+	return {device, command_pool_create_info};
+//	return device.createCommandPool(command_pool_create_info);
 }
 
 vk::raii::CommandBuffer vk_allocate_command_buffer(vk::raii::Device const &device, vk::raii::CommandPool const &command_pool) {
@@ -508,6 +519,16 @@ vk::raii::CommandBuffer vk_allocate_command_buffer(vk::raii::Device const &devic
 		.commandBufferCount = 1,
 	};
 	return std::move(device.allocateCommandBuffers(command_buffer_allocate_info).front());
+}
+
+vk::raii::CommandBuffers vk_allocate_command_buffers(vk::raii::Device const &device, vk::raii::CommandPool const &command_pool) {
+	vk::CommandBufferAllocateInfo command_buffer_allocate_info{
+		.commandPool = *command_pool,
+		.level = vk::CommandBufferLevel::ePrimary,
+		.commandBufferCount = MAX_FRAMES_IN_FLIGHT,
+	};
+	return {device, command_buffer_allocate_info};
+//	return device.allocateCommandBuffers(command_buffer_allocate_info);
 }
 
 void vk_record_command_buffer(
@@ -567,40 +588,67 @@ int main() {
 		vk::raii::Pipeline const vk_pipeline = vk_create_pipeline(vk_device, vk_swapchain_extent, vk_pipeline_layout, vk_render_pass);
 		std::vector<vk::raii::Framebuffer> vk_framebuffers = vk_create_framebuffers(vk_device, vk_image_views, vk_render_pass, vk_swapchain_extent);
 		vk::raii::CommandPool vk_command_pool = vk_create_command_pool(vk_device, vk_swapchain_info.get_graphics_queue_family_index());
-		vk::raii::CommandBuffer vk_command_buffer = vk_allocate_command_buffer(vk_device, vk_command_pool);
 
-		vk::raii::Semaphore vk_image_available_semaphore = vk_device.createSemaphore({});
-		vk::raii::Semaphore vk_render_finished_semaphore = vk_device.createSemaphore({});
-		vk::raii::Fence vk_in_flight_fence = vk_device.createFence({.flags = vk::FenceCreateFlagBits::eSignaled});
+		vk::raii::CommandBuffers vk_command_buffers = vk_allocate_command_buffers(vk_device, vk_command_pool);
+//		vk::raii::CommandBuffer vk_command_buffer = vk_allocate_command_buffer(vk_device, vk_command_pool);
+
+		std::vector<vk::raii::Semaphore> vk_image_available_semaphores;
+		std::vector<vk::raii::Semaphore> vk_render_finished_semaphores;
+		std::vector<vk::raii::Fence> vk_in_flight_fences;
+		vk_image_available_semaphores.reserve(MAX_FRAMES_IN_FLIGHT);
+		vk_render_finished_semaphores.reserve(MAX_FRAMES_IN_FLIGHT);
+		vk_in_flight_fences.reserve(MAX_FRAMES_IN_FLIGHT);
+		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+			vk_image_available_semaphores.emplace_back(vk_device, vk::SemaphoreCreateInfo{});
+			vk_render_finished_semaphores.emplace_back(vk_device, vk::SemaphoreCreateInfo{});
+			vk_in_flight_fences.emplace_back(vk_device, vk::FenceCreateInfo{.flags = vk::FenceCreateFlagBits::eSignaled});
+		}
+//		vk::raii::Semaphore vk_image_available_semaphore = vk_device.createSemaphore({});
+//		vk::raii::Semaphore vk_render_finished_semaphore = vk_device.createSemaphore({});
+//		vk::raii::Fence vk_in_flight_fence = vk_device.createFence({.flags = vk::FenceCreateFlagBits::eSignaled});
 		vk::PipelineStageFlags vk_image_available_semaphore_wait_stage = vk::PipelineStageFlagBits::eColorAttachmentOutput;
 		timer::stop("initialization");
 // todo review subpasses and synchronisation because i am tired
 
 		vk::SubmitInfo graphics_queue_submit_info{
 			.waitSemaphoreCount = 1,
-			.pWaitSemaphores = &*vk_image_available_semaphore,
+//			.pWaitSemaphores = &*vk_image_available_semaphore,
 			.pWaitDstStageMask = &vk_image_available_semaphore_wait_stage,
 			.commandBufferCount = 1,
-			.pCommandBuffers = &*vk_command_buffer,
+//			.pCommandBuffers = &*vk_command_buffer,
 			.signalSemaphoreCount = 1,
-			.pSignalSemaphores = &*vk_render_finished_semaphore,
+//			.pSignalSemaphores = &*vk_render_finished_semaphore,
 		};
 		uint32_t image_index;
 		vk::PresentInfoKHR present_info{
 			.waitSemaphoreCount = 1,
-			.pWaitSemaphores = &*vk_render_finished_semaphore,
+//			.pWaitSemaphores = &*vk_render_finished_semaphore,
 			.swapchainCount = 1,
 			.pSwapchains = &*vk_swapchain,
 			.pImageIndices = &image_index, // todo figure this out
 		};
+		size_t current_flight_frame = 0;
 		while (!vkfw_window->shouldClose()) {
-			vk_device.waitForFences({*vk_in_flight_fence}, true, std::numeric_limits<uint64_t>::max());
-			vk_device.resetFences({*vk_in_flight_fence});
-			image_index = vk_swapchain.acquireNextImage(std::numeric_limits<uint64_t>::max(), *vk_image_available_semaphore, nullptr).second;
-			vk_record_command_buffer(vk_command_buffer, vk_render_pass, vk_framebuffers[image_index], vk_swapchain_extent, vk_pipeline);
-			vk_graphics_queue.submit({graphics_queue_submit_info}, {*vk_in_flight_fence});
+//			vk_device.waitForFences({*vk_in_flight_fence}, true, std::numeric_limits<uint64_t>::max());
+//			vk_device.resetFences({*vk_in_flight_fence});
+			vk_device.waitForFences({*vk_in_flight_fences[current_flight_frame]}, true, std::numeric_limits<uint64_t>::max());
+			vk_device.resetFences({*vk_in_flight_fences[current_flight_frame]});
+			image_index = vk_swapchain.acquireNextImage(std::numeric_limits<uint64_t>::max(),
+			                                            *vk_image_available_semaphores[current_flight_frame],
+			                                            nullptr).second;
+			vk_record_command_buffer(vk_command_buffers[current_flight_frame], vk_render_pass, vk_framebuffers[image_index], vk_swapchain_extent, vk_pipeline);
+
+			graphics_queue_submit_info.pWaitSemaphores = &*vk_image_available_semaphores[current_flight_frame];
+			graphics_queue_submit_info.pCommandBuffers = &*vk_command_buffers[current_flight_frame];
+			graphics_queue_submit_info.pSignalSemaphores = &*vk_render_finished_semaphores[current_flight_frame];
+			vk_graphics_queue.submit({graphics_queue_submit_info}, {*vk_in_flight_fences[current_flight_frame]});
+
+			present_info.pWaitSemaphores = &*vk_render_finished_semaphores[current_flight_frame];
 			vk_present_queue.presentKHR(present_info);
+
 			vkfw::pollEvents(); // waitEvents vs pollEvents ?
+			++current_flight_frame;
+			if (current_flight_frame == MAX_FRAMES_IN_FLIGHT) current_flight_frame = 0;
 			timer::frame();
 		}
 		timer::dump_fps();
