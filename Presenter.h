@@ -100,10 +100,9 @@ namespace av {
 		inline static std::string const FRAGMENT_SHADER_FILE_NAME = "shaders/shader.frag.spv"; // https://stackoverflow.com/a/1563906
 		static constexpr size_t MAX_FRAMES_IN_FLIGHT = 2;
 
-		// vkfw things are prefixed vkfw_
-		// vk things are not prefixed
+		// in case of ambiguity between vkfw and vk object identifiers, the vkfw identifier is prefixed with vkfw_
 		vkfw::UniqueInstance const vkfw_instance;
-		vkfw::UniqueWindow const vkfw_window;
+		vkfw::UniqueWindow const window;
 		vk::raii::Context const context;
 		vk::raii::Instance const instance;
 		vk::raii::SurfaceKHR const surface;
@@ -111,9 +110,9 @@ namespace av {
 		SwapchainInfo swapchain_info; // non-const for swapchain recreation
 		vk::raii::Device const device;
 		vk::raii::PipelineLayout const pipeline_layout;
-		vk::raii::Queue const graphics_queue; // queue indices depend on swapchain info but should not change upon VK_ERROR_OUT_OF_DATE_KHR
 		vk::raii::CommandPool const graphics_command_pool;
 		vk::raii::CommandBuffers const graphics_command_buffers;
+		vk::raii::Queue const graphics_queue; // queue indices depend on swapchain info but should not change upon VK_ERROR_OUT_OF_DATE_KHR
 		vk::raii::Queue const present_queue; // at least i think they shouldn't change
 		std::vector<FrameSyncSignaler> const frame_sync_signalers;
 
@@ -126,7 +125,8 @@ namespace av {
 		std::vector<vk::raii::ImageView> image_views;
 		std::vector<vk::raii::Framebuffer> framebuffers;
 
-		uint32_t current_flight_frame; // for multiple frames in flight
+		uint32_t current_flight_frame = 0; // for multiple frames in flight
+		bool framebuffer_resized = false;
 
 		[[nodiscard]] vk::raii::Instance create_instance() const;
 
@@ -152,6 +152,8 @@ namespace av {
 		[[nodiscard]] std::vector<vk::raii::ImageView> create_image_views() const;
 
 		[[nodiscard]] std::vector<vk::raii::Framebuffer> create_framebuffers() const;
+
+		void recreate_swapchain();
 
 
 		[[nodiscard]] vk::raii::ShaderModule create_shader_module(std::vector<char> const &code_chars) const;

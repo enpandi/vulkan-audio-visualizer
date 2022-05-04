@@ -10,32 +10,39 @@
 #include <set>
 // todo MORE INCLUDES MAY BE NECESSARY IDK
 
+// many of these functions require a very specific relative ordering, which may be a source of bugs.
+// todo be careful
+
 av::Presenter::Presenter()
-	: vkfw_instance{vkfw::initUnique()},
-	  vkfw_window{vkfw::createWindowUnique(640, 480, "window name")}, // todo do a config thing for these values
-	  instance{create_instance()},
-	  surface{instance, vkfw::createWindowSurface(*instance, *vkfw_window)},
-	  physical_device{choose_physical_device()},
-	  swapchain_info{physical_device, surface},
-	  device{create_device()},
-	  pipeline_layout{create_pipeline_layout()},
-	  graphics_queue{device, swapchain_info.get_graphics_queue_family_index(), 0},
-	  graphics_command_pool{create_command_pool()},
-	  graphics_command_buffers{allocate_command_buffers()},
-	  present_queue{device, swapchain_info.get_present_queue_family_index(), 0},
-	  frame_sync_signalers{create_frame_sync_signalers()},
+	: vkfw_instance{vkfw::initUnique()}
+	, window{vkfw::createWindowUnique(640, 480, "window name")}
+	, // todo do a config thing for these values
+	instance{create_instance()}
+	, surface{instance, vkfw::createWindowSurface(*instance, *window)}
+	, physical_device{choose_physical_device()}
+	, swapchain_info{physical_device, surface}
+	, device{create_device()}
+	, pipeline_layout{create_pipeline_layout()}
+	, graphics_command_pool{create_command_pool()}
+	, graphics_command_buffers{allocate_command_buffers()}
+	, graphics_queue{device, swapchain_info.get_graphics_queue_family_index(), 0}
+	, present_queue{device, swapchain_info.get_present_queue_family_index(), 0}
+	, frame_sync_signalers{create_frame_sync_signalers()}
 	// swapchain objects that might be recreated:
-	  swapchain_format{swapchain_info.get_surface_format().format},
-	  swapchain_extent{swapchain_info.get_extent(vkfw_window)},
-	  swapchain{create_swapchain()},
-	  render_pass{create_render_pass()},
-	  pipeline{create_pipeline()},
-	  image_views{create_image_views()},
-	  framebuffers{create_framebuffers()} {
+	, swapchain_format{swapchain_info.get_surface_format().format}
+	, swapchain_extent{swapchain_info.get_extent(window)}
+	, swapchain{create_swapchain()}
+	, render_pass{create_render_pass()}
+	, pipeline{create_pipeline()}
+	, image_views{create_image_views()}
+	, framebuffers{create_framebuffers()} {
 	vkfw::setErrorCallback(
 		[](int error_code, char const *const description) {
 			std::cerr << "glfw error callback: error code " << error_code << ", " << description << std::endl;
 		});
+	window->callbacks()->on_framebuffer_resize = [&](vkfw::Window const &, size_t, size_t) {
+		framebuffer_resized = true;
+	};
 }
 
 av::Presenter::~Presenter() {
@@ -44,17 +51,24 @@ av::Presenter::~Presenter() {
 }
 
 bool av::Presenter::running() const {
-	return !vkfw_window->shouldClose();
+	return !window->shouldClose();
 }
 
 void av::Presenter::draw_frame() {
 	vk::PipelineStageFlags image_available_semaphore_wait_stage = vk::PipelineStageFlagBits::eColorAttachmentOutput;
 	FrameSyncSignaler const &frame_sync_signaler = frame_sync_signalers[current_flight_frame];
 	device.waitForFences({*frame_sync_signaler.in_flight_fence}, true, std::numeric_limits<uint64_t>::max());
+	uint32_t image_index;
+	try {
+		image_index = swapchain.acquireNextImage(
+			std::numeric_limits<uint64_t>::max(),
+			*frame_sync_signaler.image_available_semaphore,
+			nullptr).second;
+	} catch (vk::OutOfDateKHRError const &e) {
+		recreate_swapchain();
+		return;
+	}
 	device.resetFences({*frame_sync_signaler.in_flight_fence});
-	uint32_t image_index = swapchain.acquireNextImage(std::numeric_limits<uint64_t>::max(),
-	                                         *frame_sync_signaler.image_available_semaphore,
-	                                         nullptr).second;
 	record_graphics_command_buffer(graphics_command_buffers[current_flight_frame], framebuffers[image_index]);
 	vk::SubmitInfo graphics_queue_submit_info{
 		.waitSemaphoreCount = 1,
@@ -73,7 +87,13 @@ void av::Presenter::draw_frame() {
 		.pSwapchains = &*swapchain,
 		.pImageIndices = &image_index,
 	};
-	present_queue.presentKHR(present_info);
+	try {
+		vk::Result present_result = present_queue.presentKHR(present_info);
+		if (framebuffer_resized || present_result == vk::Result::eSuboptimalKHR)
+			recreate_swapchain();
+	} catch (vk::OutOfDateKHRError const &e) {
+		recreate_swapchain();
+	}
 	vkfw::pollEvents();
 	++current_flight_frame;
 	if (current_flight_frame == MAX_FRAMES_IN_FLIGHT) current_flight_frame = 0;
@@ -201,12 +221,12 @@ av::Presenter::SwapchainInfo::SwapchainInfo(
 	vk::SurfaceCapabilitiesKHR const &surface_capabilities,
 	std::optional<vk::SurfaceFormatKHR> const &surface_format,
 	std::optional<vk::PresentModeKHR> const &present_mode
-) : supports_all_required_extensions{supports_all_extensions},
-    graphics_queue_family_index{queue_family_indices.graphics_queue_family_index},
-    present_queue_family_index{queue_family_indices.present_queue_family_index},
-    surface_capabilities{surface_capabilities},
-    surface_format{surface_format},
-    present_mode{present_mode} {}
+) : supports_all_required_extensions{supports_all_extensions}
+	, graphics_queue_family_index{queue_family_indices.graphics_queue_family_index}
+	, present_queue_family_index{queue_family_indices.present_queue_family_index}
+	, surface_capabilities{surface_capabilities}
+	, surface_format{surface_format}
+	, present_mode{present_mode} {}
 
 
 av::Presenter::FrameSyncSignaler::FrameSyncSignaler(
@@ -214,9 +234,9 @@ av::Presenter::FrameSyncSignaler::FrameSyncSignaler(
 	vk::SemaphoreCreateInfo const &image_available_semaphore_create_info,
 	vk::SemaphoreCreateInfo const &render_finished_semaphore_create_info,
 	vk::FenceCreateInfo const &in_flight_fence_create_info
-) : image_available_semaphore{device, image_available_semaphore_create_info},
-    render_finished_semaphore{device, render_finished_semaphore_create_info},
-    in_flight_fence{device, in_flight_fence_create_info} {}
+) : image_available_semaphore{device, image_available_semaphore_create_info}
+	, render_finished_semaphore{device, render_finished_semaphore_create_info}
+	, in_flight_fence{device, in_flight_fence_create_info} {}
 
 
 vk::raii::Instance av::Presenter::create_instance() const {
@@ -262,8 +282,7 @@ vk::raii::PhysicalDevice av::Presenter::choose_physical_device() const {
 vk::raii::Device av::Presenter::create_device() const {
 	std::vector<vk::DeviceQueueCreateInfo> device_queue_create_infos;
 	float queue_priority = 0.0f;
-	for (uint32_t queue_family_index : std::set<uint32_t>{
-		swapchain_info.get_graphics_queue_family_index(), swapchain_info.get_present_queue_family_index()})
+	for (uint32_t queue_family_index : std::set<uint32_t>{swapchain_info.get_graphics_queue_family_index(), swapchain_info.get_present_queue_family_index()})
 		device_queue_create_infos.push_back(
 			{
 				.queueFamilyIndex = queue_family_index,
@@ -532,6 +551,29 @@ std::vector<vk::raii::Framebuffer> av::Presenter::create_framebuffers() const {
 		framebuffers.emplace_back(device, framebuffer_create_info);
 	}
 	return framebuffers;
+}
+
+void av::Presenter::recreate_swapchain() {
+	for (;;) {
+		auto[width, height] = window->getFramebufferSize();
+		if (width && height) break;
+		vkfw::waitEvents();
+		// if window is minimized, wait until it is not minimized
+	}
+
+	device.waitIdle();
+	// placement new https://stackoverflow.com/a/54645552
+	swapchain_info.~SwapchainInfo();
+	new(&swapchain_info) SwapchainInfo(physical_device, surface);
+	swapchain_format = swapchain_info.get_surface_format().format;
+	swapchain_extent = swapchain_info.get_extent(window);
+	swapchain.~SwapchainKHR(); // IMPORTANT !!
+	swapchain = create_swapchain();
+	render_pass = create_render_pass();
+	pipeline = create_pipeline();
+	image_views = create_image_views();
+	framebuffers = create_framebuffers();
+	framebuffer_resized = false;
 }
 
 
