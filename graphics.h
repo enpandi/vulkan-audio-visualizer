@@ -1,8 +1,0 @@
-//
-// Created by panda on 22/04/25.
-//
-
-#ifndef AUDIO_VISUALIZER_GRAPHICS_H
-#define AUDIO_VISUALIZER_GRAPHICS_H
-
-#endif //AUDIO_VISUALIZER_GRAPHICS_H

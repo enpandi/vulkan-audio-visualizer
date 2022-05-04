@@ -1,3 +1,11 @@
+#if 0
+#define VULKAN_HPP_NO_CONSTRUCTORS
+#define VULKAN_HPP_NO_SETTERS
+#define VKFW_NO_STRUCT_CONSTRUCTORS
+#include <vkfw/vkfw.hpp>
+#include <vulkan/vulkan_raii.hpp>
+// todo figure out precompiled headers
+
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -6,11 +14,6 @@
 #include <set>
 // more includes may be necessary
 
-#define VULKAN_HPP_NO_CONSTRUCTORS
-#define VULKAN_HPP_NO_SETTERS
-#define VKFW_NO_STRUCT_CONSTRUCTORS
-#include <vkfw/vkfw.hpp>
-#include <vulkan/vulkan_raii.hpp>
 
 // todo disable stuff in release mode, for now assume debug mode always
 
@@ -19,9 +22,9 @@ static std::array const vk_device_extensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME}
 static std::string const application_name = "audio visualizer";
 static std::string const vertex_shader_file_name = "shaders/shader.vert.spv";
 static std::string const fragment_shader_file_name = "shaders/shader.frag.spv";
-static constexpr size_t MAX_FRAMES_IN_FLIGHT = 3;
+static constexpr size_t MAX_FRAMES_IN_FLIGHT = 2;
 
-// perf doesn't work on windows
+// idk how to perf on windows
 namespace timer {
 	std::chrono::time_point<std::chrono::steady_clock> start_time;
 
@@ -567,7 +570,7 @@ int main() {
 	try {
 		timer::start();
 		auto const vkfw_instance = vkfw::initUnique();
-		vkfw::UniqueWindow const vkfw_window = vkfw::createWindowUnique(640, 480, "window name", vkfw::WindowHints{.resizable = false});
+		vkfw::UniqueWindow const vkfw_window = vkfw::createWindowUnique(640, 480, "window name");//, vkfw::WindowHints{.resizable = false});
 		vk::raii::Context const vk_context;
 		vk::raii::Instance const vk_instance = vk_create_instance(vk_context);
 		// mixing normal and unique and raii is weird
@@ -575,22 +578,21 @@ int main() {
 		auto const[vk_physical_device, vk_swapchain_info] = vk_choose_physical_device(vk_instance, vk_surface);
 		vk::raii::Device const vk_device = vk_create_device(vk_physical_device, vk_swapchain_info);
 		// create queues here? or later
+		vk::raii::PipelineLayout const vk_pipeline_layout = vk_create_pipeline_layout(vk_device);
 		vk::raii::Queue const vk_graphics_queue(vk_device, vk_swapchain_info.get_graphics_queue_family_index(), 0);
+		vk::raii::CommandPool vk_command_pool = vk_create_command_pool(vk_device, vk_swapchain_info.get_graphics_queue_family_index());
+		vk::raii::CommandBuffers vk_command_buffers = vk_allocate_command_buffers(vk_device, vk_command_pool);
+//		vk::raii::CommandBuffer vk_command_buffer = vk_allocate_command_buffer(vk_device, vk_command_pool);
 		vk::raii::Queue const vk_present_queue(vk_device, vk_swapchain_info.get_present_queue_family_index(), 0);
+
 		vk::Format const &vk_format = vk_swapchain_info.get_surface_format().format;
 		vk::Extent2D const vk_swapchain_extent = vk_swapchain_info.get_extent(vkfw_window);
 		vk::raii::SwapchainKHR const vk_swapchain = vk_create_swapchain(vk_device, vk_surface, vk_swapchain_info, vk_swapchain_extent);
-		std::vector<VkImage> const vk_images = vk_swapchain.getImages(); // VkImage is a handle, works differently wrt vk::Image
-		std::vector<vk::raii::ImageView> const vk_image_views = vk_create_image_views(vk_images, vk_device, vk_format);
-		// todo some of the consts must go
-		vk::raii::PipelineLayout const vk_pipeline_layout = vk_create_pipeline_layout(vk_device);
 		vk::raii::RenderPass const vk_render_pass = vk_create_render_pass(vk_device, vk_format);
 		vk::raii::Pipeline const vk_pipeline = vk_create_pipeline(vk_device, vk_swapchain_extent, vk_pipeline_layout, vk_render_pass);
-		std::vector<vk::raii::Framebuffer> vk_framebuffers = vk_create_framebuffers(vk_device, vk_image_views, vk_render_pass, vk_swapchain_extent);
-		vk::raii::CommandPool vk_command_pool = vk_create_command_pool(vk_device, vk_swapchain_info.get_graphics_queue_family_index());
 
-		vk::raii::CommandBuffers vk_command_buffers = vk_allocate_command_buffers(vk_device, vk_command_pool);
-//		vk::raii::CommandBuffer vk_command_buffer = vk_allocate_command_buffer(vk_device, vk_command_pool);
+		std::vector<vk::raii::ImageView> const vk_image_views = vk_create_image_views(vk_swapchain.getImages(), vk_device, vk_format);
+		std::vector<vk::raii::Framebuffer> vk_framebuffers = vk_create_framebuffers(vk_device, vk_image_views, vk_render_pass, vk_swapchain_extent);
 
 		std::vector<vk::raii::Semaphore> vk_image_available_semaphores;
 		std::vector<vk::raii::Semaphore> vk_render_finished_semaphores;
@@ -607,7 +609,7 @@ int main() {
 //		vk::raii::Semaphore vk_render_finished_semaphore = vk_device.createSemaphore({});
 //		vk::raii::Fence vk_in_flight_fence = vk_device.createFence({.flags = vk::FenceCreateFlagBits::eSignaled});
 		vk::PipelineStageFlags vk_image_available_semaphore_wait_stage = vk::PipelineStageFlagBits::eColorAttachmentOutput;
-		timer::stop("initialization");
+		timer::stop("initialization");//
 // todo review subpasses and synchronisation because i am tired
 
 		vk::SubmitInfo graphics_queue_submit_info{
@@ -652,7 +654,7 @@ int main() {
 			timer::frame();
 		}
 		timer::dump_fps();
-		vk_device.waitIdle(); // wait for everything to finish
+		vk_device.waitIdle(); // wait for all vulkan operations to finish before terminating
 	} catch (std::system_error &err) {
 		std::cerr << "std::system_error: code " << err.code() << ": " << err.what() << std::endl;
 		std::exit(EXIT_FAILURE);
@@ -663,4 +665,61 @@ int main() {
 		std::cerr << "unknown error" << std::endl;
 		std::exit(EXIT_FAILURE);
 	}
+}
+//
+#endif
+
+#include "Presenter.h"
+
+//#include <chrono>
+#include <iomanip>
+#include <iostream>
+
+// idk how to perf on windows
+namespace timer {
+	std::chrono::time_point<std::chrono::steady_clock> start_time;
+
+	void start() {
+		start_time = std::chrono::steady_clock::now();
+	}
+
+	void stop(char const *message) {
+		auto stop_time = std::chrono::steady_clock::now();
+		auto nanos = std::chrono::duration_cast<std::chrono::nanoseconds>(stop_time - start_time).count();
+		std::cout << std::right << std::setw(15) << static_cast<long double>(nanos) / 1e9 << " s - " << message << std::endl;
+	}
+
+	std::chrono::time_point<std::chrono::steady_clock> prev_frame_time;
+	uint64_t frame_count = 0;
+	std::vector<uint64_t> frame_counts;
+
+	void frame() {
+		if (!frame_count) {
+			prev_frame_time = std::chrono::steady_clock::now();
+			frame_counts.emplace_back(0);
+		}
+		++frame_count;
+		auto now = std::chrono::steady_clock::now();
+		auto nanos = std::chrono::duration_cast<std::chrono::nanoseconds>(now - prev_frame_time).count();
+		if (nanos > 1000000000ll) { // one second
+			prev_frame_time = now;
+			frame_counts.emplace_back(frame_count);
+		}
+	}
+
+	void dump_fps() {
+		for (size_t i = 1; i < frame_counts.size(); ++i)
+			std::cout << frame_counts[i] - frame_counts[i - 1] << ' ';
+	}
+}
+
+int main() {
+	timer::start();
+	av::Presenter presenter;
+	timer::stop("initialization");
+	while (presenter.running()) {
+		presenter.draw_frame();
+		timer::frame();
+	}
+	timer::dump_fps();
 }
