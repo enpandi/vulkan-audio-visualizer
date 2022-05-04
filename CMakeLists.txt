@@ -3,9 +3,11 @@ project(audio_visualizer)
 
 # todo change optimization level in release mode
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Og")
+# -ftime-report to profile the compilation process
+# -fno-stack-protector to allow compatibility with precompiled headers
 set(CMAKE_CXX_STANDARD 20)
 
-add_executable(${PROJECT_NAME} main.cpp graphics.cpp Recorder.cpp Recorder.h)
+add_executable(${PROJECT_NAME} main.cpp Recorder.cpp Recorder.h Presenter.cpp Presenter.h)
 
 
 # CMake function for shaders
@@ -58,6 +60,7 @@ target_include_directories(${PROJECT_NAME} PUBLIC ${Vulkan_INCLUDE_DIRS})
 target_link_libraries(${PROJECT_NAME} ${Vulkan_LIBRARIES})
 
 # GLFW
+# https://www.glfw.org/docs/3.3/build_guide.html#build_link_cmake_source
 set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
@@ -68,3 +71,10 @@ target_link_libraries(${PROJECT_NAME} glfw)
 target_include_directories(${PROJECT_NAME} PUBLIC lib/include)
 # todo make this better??? vkfw weird
 # todo github fetch stuff?
+
+
+#target_precompile_headers(${PROJECT_NAME} PRIVATE
+#	${Vulkan_INCLUDE_DIRS}/vulkan/vulkan.h
+#)
+#target_precompile_headers(${PROJECT_NAME} PRIVATE precompile_vulkan.h)
+# todo figure out precompiled headers; apparently address randomization interferes, and maybe it's MinGW
