@@ -43,14 +43,28 @@ namespace timer {
 
 int main() {
 	try {
+		using Vertex = av::Presenter::Vertex;
+		std::array vertices = {
+			Vertex{{-0.5f, -0.5f},
+			       {1.0f,  0.0f, 0.0f}},
+			Vertex{{+0.5f, -0.5f},
+			       {0.0f,  1.0f, 0.0f}},
+			Vertex{{+0.5f, +0.5f},
+			       {0.0f,  0.0f, 1.0f}},
+			Vertex{{-0.5f, +0.5f},
+			       {0.5f,  0.5f, 0.5f}},
+		};
 		timer::start();
-		av::Presenter presenter;
+		av::Presenter presenter(vertices.size());
 		timer::stop("initialization");
-		while (presenter.running()) {
+
+		presenter.set_vertices(vertices.data());
+		while (presenter.is_running()) {
 			presenter.draw_frame();
 			timer::frame();
 		}
 		timer::dump_fps();
+
 	} catch (std::system_error &err) {
 		std::cerr << "std::system_error: code " << err.code() << ": " << err.what() << std::endl;
 		std::exit(EXIT_FAILURE);

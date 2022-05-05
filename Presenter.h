@@ -16,22 +16,57 @@
 namespace av {
 	class Presenter {
 	public:
-		Presenter();
+
+		struct Vertex {
+			struct Position {
+				float x, y;
+			} position;
+			struct Color {
+				float r, g, b;
+			} color;
+		private:
+			friend class Presenter; // don't know if this is the best way to structure things
+			static vk::VertexInputBindingDescription constexpr get_binding_description();
+			static std::array<vk::VertexInputAttributeDescription, 2> constexpr get_attribute_descriptions();
+		};
+
+		Presenter(size_t const &num_vertices);
 
 		~Presenter();
 
-		[[nodiscard]] bool running() const;
+		// todo rule of 3? rule of 5? https://en.cppreference.com/w/cpp/language/rule_of_three
+
+		[[nodiscard]] bool is_running() const;
+
+		// upload vertices to the vertex buffer
+		// todo this is probably not fast
+		// todo try https://redd.it/aij7zp
+		void set_vertices(Vertex const *const vertices) const;
 
 		void draw_frame();
 
-//		void loop() const;
-
 	private:
+
+		class QueueFamilyIndices {
+		public:
+			QueueFamilyIndices(vk::raii::PhysicalDevice const &physical_device, vk::raii::SurfaceKHR const &surface);
+
+			[[nodiscard]] bool is_compatible() const;
+
+			[[nodiscard]] uint32_t const &get_graphics_queue_family_index() const;
+
+			[[nodiscard]] uint32_t const &get_present_queue_family_index() const;
+
+		private:
+			std::optional<uint32_t> graphics_queue_family_index;
+			std::optional<uint32_t> present_queue_family_index;
+		};
 
 		class SwapchainInfo {
 		public:
 			// delegating constructor https://stackoverflow.com/a/61033668
-			SwapchainInfo(vk::raii::PhysicalDevice const &physical_device, vk::raii::SurfaceKHR const &surface);
+			SwapchainInfo(vk::raii::PhysicalDevice const &physical_device, vk::raii::SurfaceKHR const &surface, vkfw::UniqueWindow const &window
+			);
 
 			[[nodiscard]] bool is_compatible() const;
 
@@ -46,7 +81,7 @@ namespace av {
 			[[nodiscard]] vk::PresentModeKHR const &get_present_mode() const;
 
 			// Window vs UniqueWindow ?
-			[[nodiscard]] vk::Extent2D get_extent(vkfw::UniqueWindow const &window) const;
+			[[nodiscard]] vk::Extent2D get_extent() const;
 
 		private:
 			bool const supports_all_required_extensions;
@@ -55,15 +90,9 @@ namespace av {
 			vk::SurfaceCapabilitiesKHR const surface_capabilities;
 			std::optional<vk::SurfaceFormatKHR> const surface_format;
 			std::optional<vk::PresentModeKHR> const present_mode;
+			vkfw::UniqueWindow const &window;
 
 			static bool check_supports_all_extensions(vk::raii::PhysicalDevice const &physical_device);
-
-			struct QueueFamilyIndices {
-				std::optional<uint32_t> graphics_queue_family_index;
-				std::optional<uint32_t> present_queue_family_index;
-
-				QueueFamilyIndices(vk::raii::PhysicalDevice const &physical_device, vk::raii::SurfaceKHR const &surface);
-			};
 
 			static std::optional<vk::SurfaceFormatKHR>
 			choose_surface_format(vk::raii::PhysicalDevice const &physical_device, vk::raii::SurfaceKHR const &surface);
@@ -75,17 +104,18 @@ namespace av {
 				QueueFamilyIndices const &queue_family_indices,
 				vk::SurfaceCapabilitiesKHR const &surface_capabilities,
 				std::optional<vk::SurfaceFormatKHR> const &surface_format,
-				std::optional<vk::PresentModeKHR> const &present_mode
+				std::optional<vk::PresentModeKHR> const &present_mode,
+				vkfw::UniqueWindow const &window
 			);
 		};
 
 		// todo read this https://www.khronos.org/blog/understanding-vulkan-synchronization
 		// todo and this (vulkan 1.2+, not good for mobile) https://www.khronos.org/blog/vulkan-timeline-semaphores
-		struct FrameSyncSignaler {
-			vk::raii::Semaphore image_available_semaphore;
-			vk::raii::Semaphore render_finished_semaphore;
-			vk::raii::Fence in_flight_fence;
-			FrameSyncSignaler(
+		struct FrameSyncPrimitives {
+			vk::raii::Semaphore draw_complete;
+			vk::raii::Semaphore present_complete;
+			vk::raii::Fence frame_in_flight;
+			FrameSyncPrimitives(
 				vk::raii::Device const &device,
 				vk::SemaphoreCreateInfo const &image_available_semaphore_create_info,
 				vk::SemaphoreCreateInfo const &render_finished_semaphore_create_info,
@@ -98,65 +128,88 @@ namespace av {
 		inline static std::string const APPLICATION_NAME = "audio visualizer";
 		inline static std::string const VERTEX_SHADER_FILE_NAME = "shaders/shader.vert.spv"; // todo can the strings be constexpr?
 		inline static std::string const FRAGMENT_SHADER_FILE_NAME = "shaders/shader.frag.spv"; // https://stackoverflow.com/a/1563906
-		static constexpr size_t MAX_FRAMES_IN_FLIGHT = 2;
+		static size_t constexpr MAX_FRAMES_IN_FLIGHT = 2;
+
+		size_t const num_vertices;
 
 		// in case of ambiguity between vkfw and vk object identifiers, the vkfw identifier is prefixed with vkfw_
+		// some are non-const for the sake of swapchain recreation
 		vkfw::UniqueInstance const vkfw_instance;
 		vkfw::UniqueWindow const window;
 		vk::raii::Context const context;
 		vk::raii::Instance const instance;
 		vk::raii::SurfaceKHR const surface;
 		vk::raii::PhysicalDevice const physical_device;
-		SwapchainInfo swapchain_info; // non-const for swapchain recreation
+		SwapchainInfo swapchain_info;
 		vk::raii::Device const device;
-		vk::raii::PipelineLayout const pipeline_layout;
-		vk::raii::CommandPool const graphics_command_pool;
-		vk::raii::CommandBuffers const graphics_command_buffers;
-		vk::raii::Queue const graphics_queue; // queue indices depend on swapchain info but should not change upon VK_ERROR_OUT_OF_DATE_KHR
-		vk::raii::Queue const present_queue; // at least i think they shouldn't change
-		std::vector<FrameSyncSignaler> const frame_sync_signalers;
-
-		// swapchain objects that might be recreated:
-		vk::Format swapchain_format;
-		vk::Extent2D swapchain_extent;
 		vk::raii::SwapchainKHR swapchain;
+		vk::raii::PipelineLayout const pipeline_layout;
 		vk::raii::RenderPass render_pass;
 		vk::raii::Pipeline pipeline;
 		std::vector<vk::raii::ImageView> image_views;
 		std::vector<vk::raii::Framebuffer> framebuffers;
+		vk::raii::CommandPool const graphics_command_pool;
+		vk::raii::CommandBuffers const graphics_command_buffers;
+		vk::raii::Queue const graphics_queue;
+		vk::raii::Queue const present_queue;
+		std::vector<FrameSyncPrimitives> const frames_sync_primitives;
+		vk::raii::Buffer const vertex_buffer;
+		vk::raii::DeviceMemory const vertex_buffer_memory;
 
 		uint32_t current_flight_frame = 0; // for multiple frames in flight
 		bool framebuffer_resized = false;
 
-		[[nodiscard]] vk::raii::Instance create_instance() const;
+		static vk::raii::Instance create_instance(vk::raii::Context const &);
 
-		[[nodiscard]] vk::raii::PhysicalDevice choose_physical_device() const;
+		static vk::raii::PhysicalDevice choose_physical_device(vk::raii::Instance const &, vk::raii::SurfaceKHR const &);
 
-		[[nodiscard]] vk::raii::Device create_device() const;
+		static vk::raii::Device create_device(vk::raii::PhysicalDevice const &, av::Presenter::SwapchainInfo const &);
 
-		[[nodiscard]] vk::raii::PipelineLayout create_pipeline_layout() const;
+		static vk::raii::SwapchainKHR create_swapchain(vk::raii::Device const &, vk::raii::SurfaceKHR const &, av::Presenter::SwapchainInfo const &);
 
-		[[nodiscard]] vk::raii::CommandPool create_command_pool() const;
+		static vk::raii::PipelineLayout create_pipeline_layout(vk::raii::Device const &);
 
-		[[nodiscard]] vk::raii::CommandBuffers allocate_command_buffers() const;
+		static vk::raii::RenderPass create_render_pass(vk::raii::Device const &, av::Presenter::SwapchainInfo const &);
 
-		[[nodiscard]] std::vector<FrameSyncSignaler> create_frame_sync_signalers() const;
+		static vk::raii::Pipeline create_pipeline(
+			vk::raii::Device const &,
+			av::Presenter::SwapchainInfo const &,
+			vk::raii::PipelineLayout const &,
+			vk::raii::RenderPass const &
+		);
+
+		static std::vector<vk::raii::ImageView> create_image_views(
+			vk::raii::Device const &,
+			vk::raii::SwapchainKHR const &,
+			av::Presenter::SwapchainInfo const &);
+
+		static std::vector<vk::raii::Framebuffer> create_framebuffers(
+			vk::raii::Device const &,
+			vk::raii::RenderPass const &,
+			std::vector<vk::raii::ImageView> const &,
+			av::Presenter::SwapchainInfo const &
+		);
+
+		static vk::raii::CommandPool create_command_pool(vk::raii::Device const &, av::Presenter::SwapchainInfo const &);
+
+		static vk::raii::CommandBuffers allocate_command_buffers(vk::raii::Device const &, vk::raii::CommandPool const &graphics_command_pool);
+
+		static std::vector<FrameSyncPrimitives> create_frame_sync_signalers(vk::raii::Device const &);
+
+		static vk::raii::ShaderModule create_shader_module(vk::raii::Device const &, std::vector<char> const &code_chars);
+
+		static vk::raii::Buffer create_vertex_buffer(vk::raii::Device const &, size_t const &num_vertices);
+
+		static vk::raii::DeviceMemory allocate_vertex_buffer_memory(
+			vk::raii::Device const &,
+			vk::raii::Buffer const &vertex_buffer,
+			vk::raii::PhysicalDevice const &
+		);
 
 
-		[[nodiscard]] vk::raii::SwapchainKHR create_swapchain() const;
-
-		[[nodiscard]] vk::raii::RenderPass create_render_pass() const;
-
-		[[nodiscard]] vk::raii::Pipeline create_pipeline() const;
-
-		[[nodiscard]] std::vector<vk::raii::ImageView> create_image_views() const;
-
-		[[nodiscard]] std::vector<vk::raii::Framebuffer> create_framebuffers() const;
+		void bind_vertex_buffer_memory() const;
 
 		void recreate_swapchain();
-
-
-		[[nodiscard]] vk::raii::ShaderModule create_shader_module(std::vector<char> const &code_chars) const;
 
 		void record_graphics_command_buffer(vk::raii::CommandBuffer const &command_buffer, vk::raii::Framebuffer const &framebuffer) const;
 

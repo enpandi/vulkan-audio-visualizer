@@ -1,41 +1,75 @@
-//
-// Created by panda on 22/05/03.
-//
-
 #include "Presenter.h"
 
 #include <fstream>
 #include <iostream>
 #include <ranges>
 #include <set>
-// todo MORE INCLUDES MAY BE NECESSARY IDK
 
-// many of these functions require a very specific relative ordering, which may be a source of bugs.
-// todo be careful
+// todo MORE INCLUDES MAY BE NECESSARY ON OTHER PLATFORMS IDK GOTTA TEST
 
-av::Presenter::Presenter()
-	: vkfw_instance{vkfw::initUnique()}
-	, window{vkfw::createWindowUnique(640, 480, "window name")}
-	, // todo do a config thing for these values
-	instance{create_instance()}
+// function definitions are ordered the same way they are in Presenter.h (or at least they should be)
+
+vk::VertexInputBindingDescription constexpr av::Presenter::Vertex::get_binding_description() {
+	return {
+		.binding = 0,
+		.stride = sizeof(Vertex),
+		.inputRate = vk::VertexInputRate::eVertex,
+	};
+}
+
+std::array<vk::VertexInputAttributeDescription, 2> constexpr av::Presenter::Vertex::get_attribute_descriptions() {
+	return {
+		vk::VertexInputAttributeDescription{
+			.location = 0,
+			.binding = 0,
+			.format = vk::Format::eR32G32Sfloat,
+			.offset = offsetof(Vertex, position),
+		},
+		vk::VertexInputAttributeDescription{
+			.location = 1,
+			.binding = 0,
+			.format = vk::Format::eR32G32B32Sfloat,
+			.offset = offsetof(Vertex, color),
+		},
+	};
+}
+
+av::Presenter::Presenter(size_t const &num_vertices)
+	: num_vertices{num_vertices}
+	, vkfw_instance{vkfw::initUnique()}
+	, window{vkfw::createWindowUnique(640, 480, "window name")} // todo do a config thing for these values
+	, instance{create_instance(
+		context)}
 	, surface{instance, vkfw::createWindowSurface(*instance, *window)}
-	, physical_device{choose_physical_device()}
-	, swapchain_info{physical_device, surface}
-	, device{create_device()}
-	, pipeline_layout{create_pipeline_layout()}
-	, graphics_command_pool{create_command_pool()}
-	, graphics_command_buffers{allocate_command_buffers()}
+	, physical_device{choose_physical_device(
+		instance, surface)}
+	, swapchain_info{physical_device, surface, window}
+	, device{create_device(
+		physical_device, swapchain_info)}
+	, swapchain{create_swapchain(
+		device, surface, swapchain_info)}
+	, pipeline_layout{create_pipeline_layout(
+		device)}
+	, render_pass{create_render_pass(
+		device, swapchain_info)}
+	, pipeline{create_pipeline(
+		device, swapchain_info, pipeline_layout, render_pass)}
+	, image_views{create_image_views(
+		device, swapchain, swapchain_info)}
+	, framebuffers{create_framebuffers(
+		device, render_pass, image_views, swapchain_info)}
+	, graphics_command_pool{create_command_pool(
+		device, swapchain_info)}
+	, graphics_command_buffers{allocate_command_buffers(
+		device, graphics_command_pool)}
 	, graphics_queue{device, swapchain_info.get_graphics_queue_family_index(), 0}
 	, present_queue{device, swapchain_info.get_present_queue_family_index(), 0}
-	, frame_sync_signalers{create_frame_sync_signalers()}
-	// swapchain objects that might be recreated:
-	, swapchain_format{swapchain_info.get_surface_format().format}
-	, swapchain_extent{swapchain_info.get_extent(window)}
-	, swapchain{create_swapchain()}
-	, render_pass{create_render_pass()}
-	, pipeline{create_pipeline()}
-	, image_views{create_image_views()}
-	, framebuffers{create_framebuffers()} {
+	, frames_sync_primitives{create_frame_sync_signalers(
+		device)}
+	, vertex_buffer{create_vertex_buffer(
+		device, num_vertices)}
+	, vertex_buffer_memory{allocate_vertex_buffer_memory(
+		device, vertex_buffer, physical_device)} {
 	vkfw::setErrorCallback(
 		[](int error_code, char const *const description) {
 			std::cerr << "glfw error callback: error code " << error_code << ", " << description << std::endl;
@@ -43,6 +77,7 @@ av::Presenter::Presenter()
 	window->callbacks()->on_framebuffer_resize = [&](vkfw::Window const &, size_t, size_t) {
 		framebuffer_resized = true;
 	};
+	bind_vertex_buffer_memory();
 }
 
 av::Presenter::~Presenter() {
@@ -50,39 +85,48 @@ av::Presenter::~Presenter() {
 	// the rest should auto-destruct
 }
 
-bool av::Presenter::running() const {
+bool av::Presenter::is_running() const {
 	return !window->shouldClose();
+}
+
+// upload vertices to the vertex buffer
+// todo this approach is probably not fast
+// todo try https://redd.it/aij7zp
+void av::Presenter::set_vertices(Vertex const *const vertices) const {
+	void *data = vertex_buffer_memory.mapMemory(0, num_vertices * sizeof(Vertex), vk::MemoryMapFlags{});
+	memcpy(data, vertices, num_vertices * sizeof(Vertex));
+	vertex_buffer_memory.unmapMemory();
 }
 
 void av::Presenter::draw_frame() {
 	vk::PipelineStageFlags image_available_semaphore_wait_stage = vk::PipelineStageFlagBits::eColorAttachmentOutput;
-	FrameSyncSignaler const &frame_sync_signaler = frame_sync_signalers[current_flight_frame];
-	device.waitForFences({*frame_sync_signaler.in_flight_fence}, true, std::numeric_limits<uint64_t>::max());
+	FrameSyncPrimitives const &frame_sync_primitives = frames_sync_primitives[current_flight_frame];
+	device.waitForFences({*frame_sync_primitives.frame_in_flight}, true, std::numeric_limits<uint64_t>::max());
 	uint32_t image_index;
 	try {
 		image_index = swapchain.acquireNextImage(
 			std::numeric_limits<uint64_t>::max(),
-			*frame_sync_signaler.image_available_semaphore,
+			*frame_sync_primitives.draw_complete,
 			nullptr).second;
 	} catch (vk::OutOfDateKHRError const &e) {
 		recreate_swapchain();
 		return;
 	}
-	device.resetFences({*frame_sync_signaler.in_flight_fence});
+	device.resetFences({*frame_sync_primitives.frame_in_flight});
 	record_graphics_command_buffer(graphics_command_buffers[current_flight_frame], framebuffers[image_index]);
 	vk::SubmitInfo graphics_queue_submit_info{
 		.waitSemaphoreCount = 1,
-		.pWaitSemaphores =  &*frame_sync_signaler.image_available_semaphore,
+		.pWaitSemaphores =  &*frame_sync_primitives.draw_complete,
 		.pWaitDstStageMask = &image_available_semaphore_wait_stage,
 		.commandBufferCount = 1,
 		.pCommandBuffers = &*graphics_command_buffers[current_flight_frame],
 		.signalSemaphoreCount = 1,
-		.pSignalSemaphores = &*frame_sync_signaler.render_finished_semaphore,
+		.pSignalSemaphores = &*frame_sync_primitives.present_complete,
 	};
-	graphics_queue.submit({graphics_queue_submit_info}, {*frame_sync_signaler.in_flight_fence});
+	graphics_queue.submit({graphics_queue_submit_info}, {*frame_sync_primitives.frame_in_flight});
 	vk::PresentInfoKHR present_info{
 		.waitSemaphoreCount = 1,
-		.pWaitSemaphores = &*frame_sync_signaler.render_finished_semaphore,
+		.pWaitSemaphores = &*frame_sync_primitives.present_complete,
 		.swapchainCount = 1,
 		.pSwapchains = &*swapchain,
 		.pImageIndices = &image_index,
@@ -99,16 +143,48 @@ void av::Presenter::draw_frame() {
 	if (current_flight_frame == MAX_FRAMES_IN_FLIGHT) current_flight_frame = 0;
 }
 
+av::Presenter::QueueFamilyIndices::QueueFamilyIndices(vk::raii::PhysicalDevice const &physical_device, vk::raii::SurfaceKHR const &surface) {
+	std::vector<vk::QueueFamilyProperties> queue_families_properties = physical_device.getQueueFamilyProperties();
+	for (uint32_t queue_family_index = 0; queue_family_index < queue_families_properties.size(); ++queue_family_index) {
+		bool supports_graphics = static_cast<bool>(queue_families_properties[queue_family_index].queueFlags & vk::QueueFlagBits::eGraphics);
+		bool supports_present = physical_device.getSurfaceSupportKHR(queue_family_index, *surface);
+		if (supports_graphics && supports_present) {
+			graphics_queue_family_index = present_queue_family_index = queue_family_index;
+			break;
+		}
+		if (supports_graphics && !graphics_queue_family_index.has_value())
+			graphics_queue_family_index = queue_family_index;
+		if (supports_present && !present_queue_family_index.has_value())
+			present_queue_family_index = queue_family_index;
+	}
+}
+
+[[nodiscard]] bool av::Presenter::QueueFamilyIndices::is_compatible() const {
+	return graphics_queue_family_index.has_value() && present_queue_family_index.has_value();
+}
+
+// prefer value() over operator* because std::bad_optional_access seems like a useful thing to throw
+
+[[nodiscard]] uint32_t const &av::Presenter::QueueFamilyIndices::get_graphics_queue_family_index() const {
+	return graphics_queue_family_index.value();
+}
+
+[[nodiscard]] uint32_t const &av::Presenter::QueueFamilyIndices::get_present_queue_family_index() const {
+	return present_queue_family_index.value();
+}
+
 // delegating constructor https://stackoverflow.com/a/61033668
 av::Presenter::SwapchainInfo::SwapchainInfo(
 	vk::raii::PhysicalDevice const &physical_device,
-	vk::raii::SurfaceKHR const &surface
+	vk::raii::SurfaceKHR const &surface,
+	vkfw::UniqueWindow const &window
 ) : SwapchainInfo(
 	check_supports_all_extensions(physical_device),
 	QueueFamilyIndices(physical_device, surface),
 	physical_device.getSurfaceCapabilitiesKHR(*surface),
 	choose_surface_format(physical_device, surface),
-	choose_present_mode(physical_device, surface)
+	choose_present_mode(physical_device, surface),
+	window
 ) {}
 
 [[nodiscard]] bool av::Presenter::SwapchainInfo::is_compatible() const {
@@ -142,7 +218,7 @@ av::Presenter::SwapchainInfo::SwapchainInfo(
 }
 
 // Window vs UniqueWindow ?
-[[nodiscard]] vk::Extent2D av::Presenter::SwapchainInfo::get_extent(vkfw::UniqueWindow const &window) const {
+[[nodiscard]] vk::Extent2D av::Presenter::SwapchainInfo::get_extent() const {
 	if (surface_capabilities.currentExtent == vk::Extent2D{
 		.width = 0xFFFFFFFF,
 		.height = 0xFFFFFFFF,
@@ -171,22 +247,6 @@ bool av::Presenter::SwapchainInfo::check_supports_all_extensions(vk::raii::Physi
 //					extensions_properties | std::views::transform(&vk::ExtensionProperties::extensionName),
 //					std::bind(std::equal_to<std::string>(), device_extension, std::placeholders::_1));
 		});
-}
-
-av::Presenter::SwapchainInfo::QueueFamilyIndices::QueueFamilyIndices(vk::raii::PhysicalDevice const &physical_device, vk::raii::SurfaceKHR const &surface) {
-	std::vector<vk::QueueFamilyProperties> queue_families_properties = physical_device.getQueueFamilyProperties();
-	for (uint32_t queue_family_index = 0; queue_family_index < queue_families_properties.size(); ++queue_family_index) {
-		bool supports_graphics = static_cast<bool>(queue_families_properties[queue_family_index].queueFlags & vk::QueueFlagBits::eGraphics);
-		bool supports_present = physical_device.getSurfaceSupportKHR(queue_family_index, *surface);
-		if (supports_graphics && supports_present) {
-			graphics_queue_family_index = present_queue_family_index = queue_family_index;
-			break;
-		}
-		if (supports_graphics && !graphics_queue_family_index.has_value())
-			graphics_queue_family_index = queue_family_index;
-		if (supports_present && !present_queue_family_index.has_value())
-			present_queue_family_index = queue_family_index;
-	}
 }
 
 std::optional<vk::SurfaceFormatKHR>
@@ -220,26 +280,28 @@ av::Presenter::SwapchainInfo::SwapchainInfo(
 	QueueFamilyIndices const &queue_family_indices,
 	vk::SurfaceCapabilitiesKHR const &surface_capabilities,
 	std::optional<vk::SurfaceFormatKHR> const &surface_format,
-	std::optional<vk::PresentModeKHR> const &present_mode
+	std::optional<vk::PresentModeKHR> const &present_mode,
+	vkfw::UniqueWindow const &window
 ) : supports_all_required_extensions{supports_all_extensions}
-	, graphics_queue_family_index{queue_family_indices.graphics_queue_family_index}
-	, present_queue_family_index{queue_family_indices.present_queue_family_index}
+	, graphics_queue_family_index{queue_family_indices.get_graphics_queue_family_index()}
+	, present_queue_family_index{queue_family_indices.get_present_queue_family_index()}
 	, surface_capabilities{surface_capabilities}
 	, surface_format{surface_format}
-	, present_mode{present_mode} {}
+	, present_mode{present_mode}
+	, window{window} {}
 
 
-av::Presenter::FrameSyncSignaler::FrameSyncSignaler(
+av::Presenter::FrameSyncPrimitives::FrameSyncPrimitives(
 	vk::raii::Device const &device,
 	vk::SemaphoreCreateInfo const &image_available_semaphore_create_info,
 	vk::SemaphoreCreateInfo const &render_finished_semaphore_create_info,
 	vk::FenceCreateInfo const &in_flight_fence_create_info
-) : image_available_semaphore{device, image_available_semaphore_create_info}
-	, render_finished_semaphore{device, render_finished_semaphore_create_info}
-	, in_flight_fence{device, in_flight_fence_create_info} {}
+) : draw_complete{device, image_available_semaphore_create_info}
+	, present_complete{device, render_finished_semaphore_create_info}
+	, frame_in_flight{device, in_flight_fence_create_info} {}
 
 
-vk::raii::Instance av::Presenter::create_instance() const {
+vk::raii::Instance av::Presenter::create_instance(vk::raii::Context const &context) {
 	vk::ApplicationInfo application_info{
 		.pApplicationName = APPLICATION_NAME.c_str(),
 		.apiVersion = VK_API_VERSION_1_1,
@@ -256,18 +318,19 @@ vk::raii::Instance av::Presenter::create_instance() const {
 //	return context.createInstance(instance_create_info);
 }
 
-vk::raii::PhysicalDevice av::Presenter::choose_physical_device() const {
+vk::raii::PhysicalDevice av::Presenter::choose_physical_device(vk::raii::Instance const &instance, vk::raii::SurfaceKHR const &surface) {
 	vk::raii::PhysicalDevices physical_devices(instance);
-	std::vector<av::Presenter::SwapchainInfo> swapchain_infos;
-	swapchain_infos.reserve(physical_devices.size());
-	std::transform(physical_devices.begin(), physical_devices.end(), std::back_inserter(swapchain_infos),
+	std::vector<av::Presenter::QueueFamilyIndices> queue_families_indices;
+//	std::vector<av::Presenter::SwapchainInfo> swapchain_infos;
+	queue_families_indices.reserve(physical_devices.size());
+	std::transform(physical_devices.begin(), physical_devices.end(), std::back_inserter(queue_families_indices),
 	               [&](vk::raii::PhysicalDevice const &physical_device) {
-		               return av::Presenter::SwapchainInfo(physical_device, surface);
+		               return av::Presenter::QueueFamilyIndices(physical_device, surface);
 	               });
 	auto usable_physical_device_indices = std::views::iota(0u, physical_devices.size())
 	                                      | std::views::filter(
 		[&](uint32_t const &physical_device_index) {
-			return swapchain_infos[physical_device_index].is_compatible();
+			return queue_families_indices[physical_device_index].is_compatible();
 		});
 	if (!usable_physical_device_indices)
 		throw std::runtime_error("vulkan failed to find usable physical devices.");
@@ -279,7 +342,7 @@ vk::raii::PhysicalDevice av::Presenter::choose_physical_device() const {
 //	return {std::move(physical_devices.front()), swapchain_infos.front()};
 }
 
-vk::raii::Device av::Presenter::create_device() const {
+vk::raii::Device av::Presenter::create_device(vk::raii::PhysicalDevice const &physical_device, av::Presenter::SwapchainInfo const &swapchain_info) {
 	std::vector<vk::DeviceQueueCreateInfo> device_queue_create_infos;
 	float queue_priority = 0.0f;
 	for (uint32_t queue_family_index : std::set<uint32_t>{swapchain_info.get_graphics_queue_family_index(), swapchain_info.get_present_queue_family_index()})
@@ -303,53 +366,19 @@ vk::raii::Device av::Presenter::create_device() const {
 //	return physical_device.createDevice(device_create_info);
 }
 
-vk::raii::PipelineLayout av::Presenter::create_pipeline_layout() const {
-	vk::PipelineLayoutCreateInfo pipeline_layout_create_info{
-		.setLayoutCount = 0,
-		.pushConstantRangeCount = 0,
-	};
-	return {device, pipeline_layout_create_info};
-//	return device.createPipelineLayout(pipeline_layout_create_info);
-}
-
-vk::raii::CommandPool av::Presenter::create_command_pool() const {
-	uint32_t const &graphics_queue_family_index = swapchain_info.get_graphics_queue_family_index();
-	vk::CommandPoolCreateInfo command_pool_create_info{
-		.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
-		.queueFamilyIndex = graphics_queue_family_index,
-	};
-	return {device, command_pool_create_info};
-//	return device.createCommandPool(command_pool_create_info);
-}
-
-vk::raii::CommandBuffers av::Presenter::allocate_command_buffers() const {
-	vk::CommandBufferAllocateInfo command_buffer_allocate_info{
-		.commandPool = *graphics_command_pool,
-		.level = vk::CommandBufferLevel::ePrimary,
-		.commandBufferCount = MAX_FRAMES_IN_FLIGHT,
-	};
-	return {device, command_buffer_allocate_info};
-//	return device.allocateCommandBuffers(command_buffer_allocate_info);
-}
-
-std::vector<av::Presenter::FrameSyncSignaler> av::Presenter::create_frame_sync_signalers() const {
-	std::vector<FrameSyncSignaler> frame_sync_signalers;
-	frame_sync_signalers.reserve(MAX_FRAMES_IN_FLIGHT);
-	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
-		frame_sync_signalers.emplace_back(
-			device,
-			vk::SemaphoreCreateInfo{},
-			vk::SemaphoreCreateInfo{},
-			vk::FenceCreateInfo{.flags = vk::FenceCreateFlagBits::eSignaled});
-	return frame_sync_signalers;
-}
-
-
-vk::raii::SwapchainKHR av::Presenter::create_swapchain() const {
+vk::raii::SwapchainKHR av::Presenter::create_swapchain(
+	vk::raii::Device const &device,
+	vk::raii::SurfaceKHR const &surface,
+	av::Presenter::SwapchainInfo const &swapchain_info
+) {
 	uint32_t const &graphics_queue_family_index = swapchain_info.get_graphics_queue_family_index();
 	uint32_t const &present_queue_family_index = swapchain_info.get_present_queue_family_index();
-	std::array queue_family_index_array = {graphics_queue_family_index, present_queue_family_index};
 	vk::SurfaceCapabilitiesKHR const &surface_capabilities = swapchain_info.get_surface_capabilities();
+	vk::PresentModeKHR const &present_mode = swapchain_info.get_present_mode();
+	std::array queue_family_index_array = {
+		swapchain_info.get_graphics_queue_family_index(),
+		swapchain_info.get_present_queue_family_index()
+	};
 	vk::SwapchainCreateInfoKHR swapchain_create_info{
 		.surface = *surface,
 		.minImageCount = surface_capabilities.maxImageCount == 0
@@ -357,7 +386,7 @@ vk::raii::SwapchainKHR av::Presenter::create_swapchain() const {
 		                 : std::min(surface_capabilities.minImageCount + 1, surface_capabilities.maxImageCount),
 		.imageFormat = swapchain_info.get_surface_format().format,
 		.imageColorSpace = swapchain_info.get_surface_format().colorSpace,
-		.imageExtent = swapchain_extent,
+		.imageExtent = swapchain_info.get_extent(),
 		.imageArrayLayers = 1,
 		.imageUsage = vk::ImageUsageFlagBits::eColorAttachment,
 		.imageSharingMode = graphics_queue_family_index == present_queue_family_index ?
@@ -366,7 +395,7 @@ vk::raii::SwapchainKHR av::Presenter::create_swapchain() const {
 		.pQueueFamilyIndices = queue_family_index_array.data(),
 		.preTransform = surface_capabilities.currentTransform, // default???
 		.compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque, // default
-		.presentMode = swapchain_info.get_present_mode(),
+		.presentMode = present_mode,
 		.clipped = true,
 //		.oldSwapchain = VK_NULL_HANDLE, // ???
 	};
@@ -374,7 +403,17 @@ vk::raii::SwapchainKHR av::Presenter::create_swapchain() const {
 //	return device.createSwapchainKHR(swapchain_create_info);
 }
 
-vk::raii::RenderPass av::Presenter::create_render_pass() const {
+vk::raii::PipelineLayout av::Presenter::create_pipeline_layout(vk::raii::Device const &device) {
+	vk::PipelineLayoutCreateInfo pipeline_layout_create_info{
+		.setLayoutCount = 0,
+		.pushConstantRangeCount = 0,
+	};
+	return {device, pipeline_layout_create_info};
+//	return device.createPipelineLayout(pipeline_layout_create_info);
+}
+
+vk::raii::RenderPass av::Presenter::create_render_pass(vk::raii::Device const &device, av::Presenter::SwapchainInfo const &swapchain_info) {
+	vk::Format const &swapchain_format = swapchain_info.get_surface_format().format;
 	vk::AttachmentDescription attachment_description{
 		.format = swapchain_format,
 		.samples = vk::SampleCountFlagBits::e1,
@@ -416,31 +455,41 @@ vk::raii::RenderPass av::Presenter::create_render_pass() const {
 //	return device.createRenderPass(render_pass_create_info);
 }
 
-vk::raii::Pipeline av::Presenter::create_pipeline() const {
+vk::raii::Pipeline av::Presenter::create_pipeline(
+	vk::raii::Device const &device,
+	av::Presenter::SwapchainInfo const &swapchain_info,
+	vk::raii::PipelineLayout const &pipeline_layout,
+	vk::raii::RenderPass const &render_pass
+) {
 	std::vector<char> vertex_shader_code = file_to_chars(VERTEX_SHADER_FILE_NAME);
-	vk::raii::ShaderModule vertex_shader_module = av::Presenter::create_shader_module(vertex_shader_code);
+	vk::raii::ShaderModule vertex_shader_module = av::Presenter::create_shader_module(device, vertex_shader_code);
 	vk::PipelineShaderStageCreateInfo vertex_shader_stage_create_info{
 		.stage = vk::ShaderStageFlagBits::eVertex, // why is this default
 		.module = *vertex_shader_module,
 		.pName = "main",
 	};
 	std::vector<char> fragment_shader_code = file_to_chars(FRAGMENT_SHADER_FILE_NAME);
-	vk::raii::ShaderModule fragment_shader_module = av::Presenter::create_shader_module(fragment_shader_code);
+	vk::raii::ShaderModule fragment_shader_module = av::Presenter::create_shader_module(device, fragment_shader_code);
 	vk::PipelineShaderStageCreateInfo fragment_shader_stage_info{
 		.stage = vk::ShaderStageFlagBits::eFragment,
 		.module = *fragment_shader_module,
 		.pName = "main",
 	};
 	std::array pipeline_shader_stage_create_infos{vertex_shader_stage_create_info, fragment_shader_stage_info};
+	vk::VertexInputBindingDescription vertex_input_binding_description = Vertex::get_binding_description();
+	std::array vertex_input_attribute_descriptions = Vertex::get_attribute_descriptions();
 	vk::PipelineVertexInputStateCreateInfo pipeline_vertex_input_state_create_info{
-		.vertexBindingDescriptionCount = 0,
-		.vertexAttributeDescriptionCount = 0,
+		.vertexBindingDescriptionCount = 1,
+		.pVertexBindingDescriptions = &vertex_input_binding_description,
+		.vertexAttributeDescriptionCount = vertex_input_attribute_descriptions.size(),
+		.pVertexAttributeDescriptions = vertex_input_attribute_descriptions.data(),
 	}; // todo
 	vk::PipelineInputAssemblyStateCreateInfo pipeline_input_assembly_state_create_info{
-		.topology = vk::PrimitiveTopology::eTriangleList,
+		.topology = vk::PrimitiveTopology::eTriangleStrip,
 		.primitiveRestartEnable = false,
 	};
 //	vk::PipelineTessellationStateCreateInfo tesselation_state_info{};
+	vk::Extent2D const &swapchain_extent = swapchain_info.get_extent();
 	vk::Viewport viewport{
 		.x = 0.0f,
 		.y = 0.0f,
@@ -460,12 +509,12 @@ vk::raii::Pipeline av::Presenter::create_pipeline() const {
 		.pScissors = &scissor,
 	};
 	vk::PipelineRasterizationStateCreateInfo pipeline_rasterization_state_create_info{
-		.depthClampEnable = false,
-		.rasterizerDiscardEnable = false, // todo what is this
+//		.depthClampEnable = false,
+//		.rasterizerDiscardEnable = false,
 		.polygonMode = vk::PolygonMode::eFill, // todo mess with these settings
-		.cullMode = vk::CullModeFlagBits::eBack,
-		.frontFace = vk::FrontFace::eClockwise,
-		.depthBiasEnable = false,
+//		.cullMode = vk::CullModeFlagBits::eNone, // todo take advantage of culling and tristrip when drawing the spectrum
+//		.frontFace = vk::FrontFace::eClockwise,
+//		.depthBiasEnable = false,
 		.lineWidth = 1.0f,
 	};
 	vk::PipelineMultisampleStateCreateInfo pipeline_multisample_state_create_info{
@@ -473,11 +522,11 @@ vk::raii::Pipeline av::Presenter::create_pipeline() const {
 		.sampleShadingEnable = false, // hmm
 	};
 	vk::PipelineColorBlendAttachmentState pipeline_color_blend_attachment_state{
-		.blendEnable = false, // todo what if it's true? UHHHHH
+//		.blendEnable = false,
 		.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA,
 	};
 	vk::PipelineColorBlendStateCreateInfo pipeline_color_blend_state_create_info{
-		.logicOpEnable = false,
+//		.logicOpEnable = false,
 //		.logicOp = vk::LogicOp::eCopy, // the default is clear?
 		.attachmentCount = 1,
 		.pAttachments = &pipeline_color_blend_attachment_state,
@@ -507,8 +556,10 @@ vk::raii::Pipeline av::Presenter::create_pipeline() const {
 //	return device.createGraphicsPipeline(nullptr, graphics_pipeline_create_info);
 }
 
-std::vector<vk::raii::ImageView> av::Presenter::create_image_views() const {
+std::vector<vk::raii::ImageView>
+av::Presenter::create_image_views(vk::raii::Device const &device, vk::raii::SwapchainKHR const &swapchain, av::Presenter::SwapchainInfo const &swapchain_info) {
 	std::vector<VkImage> images = swapchain.getImages();
+	vk::Format const &swapchain_format = swapchain_info.get_surface_format().format;
 	std::vector<vk::raii::ImageView> image_views;
 	image_views.reserve(images.size());
 	for (VkImage const &image : images) {
@@ -535,7 +586,13 @@ std::vector<vk::raii::ImageView> av::Presenter::create_image_views() const {
 	return image_views;
 }
 
-std::vector<vk::raii::Framebuffer> av::Presenter::create_framebuffers() const {
+std::vector<vk::raii::Framebuffer> av::Presenter::create_framebuffers(
+	vk::raii::Device const &device,
+	vk::raii::RenderPass const &render_pass,
+	std::vector<vk::raii::ImageView> const &image_views,
+	av::Presenter::SwapchainInfo const &swapchain_info
+) {
+	vk::Extent2D const &swapchain_extent = swapchain_info.get_extent();
 	std::vector<vk::raii::Framebuffer> framebuffers;
 	framebuffers.reserve(image_views.size());
 	for (vk::raii::ImageView const &image_view : image_views) {
@@ -553,31 +610,39 @@ std::vector<vk::raii::Framebuffer> av::Presenter::create_framebuffers() const {
 	return framebuffers;
 }
 
-void av::Presenter::recreate_swapchain() {
-	for (;;) {
-		auto[width, height] = window->getFramebufferSize();
-		if (width && height) break;
-		vkfw::waitEvents();
-		// if window is minimized, wait until it is not minimized
-	}
-
-	device.waitIdle();
-	// placement new https://stackoverflow.com/a/54645552
-	swapchain_info.~SwapchainInfo();
-	new(&swapchain_info) SwapchainInfo(physical_device, surface);
-	swapchain_format = swapchain_info.get_surface_format().format;
-	swapchain_extent = swapchain_info.get_extent(window);
-	swapchain.~SwapchainKHR(); // IMPORTANT !!
-	swapchain = create_swapchain();
-	render_pass = create_render_pass();
-	pipeline = create_pipeline();
-	image_views = create_image_views();
-	framebuffers = create_framebuffers();
-	framebuffer_resized = false;
+vk::raii::CommandPool av::Presenter::create_command_pool(vk::raii::Device const &device, av::Presenter::SwapchainInfo const &swapchain_info) {
+	uint32_t const &graphics_queue_family_index = swapchain_info.get_graphics_queue_family_index();
+	vk::CommandPoolCreateInfo command_pool_create_info{
+		.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
+		.queueFamilyIndex = graphics_queue_family_index,
+	};
+	return {device, command_pool_create_info};
+//	return device.createCommandPool(command_pool_create_info);
 }
 
+vk::raii::CommandBuffers av::Presenter::allocate_command_buffers(vk::raii::Device const &device, vk::raii::CommandPool const &graphics_command_pool) {
+	vk::CommandBufferAllocateInfo command_buffer_allocate_info{
+		.commandPool = *graphics_command_pool,
+		.level = vk::CommandBufferLevel::ePrimary,
+		.commandBufferCount = MAX_FRAMES_IN_FLIGHT,
+	};
+	return {device, command_buffer_allocate_info};
+//	return device.allocateCommandBuffers(command_buffer_allocate_info);
+}
 
-vk::raii::ShaderModule av::Presenter::create_shader_module(std::vector<char> const &code_chars) const {
+std::vector<av::Presenter::FrameSyncPrimitives> av::Presenter::create_frame_sync_signalers(vk::raii::Device const &device) {
+	std::vector<FrameSyncPrimitives> frame_sync_signalers;
+	frame_sync_signalers.reserve(MAX_FRAMES_IN_FLIGHT);
+	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+		frame_sync_signalers.emplace_back(
+			device,
+			vk::SemaphoreCreateInfo{},
+			vk::SemaphoreCreateInfo{},
+			vk::FenceCreateInfo{.flags = vk::FenceCreateFlagBits::eSignaled});
+	return frame_sync_signalers;
+}
+
+vk::raii::ShaderModule av::Presenter::create_shader_module(vk::raii::Device const &device, std::vector<char> const &code_chars) {
 	vk::ShaderModuleCreateInfo shader_module_create_info{
 		.codeSize = code_chars.size(),
 		.pCode = reinterpret_cast<uint32_t const *>(code_chars.data()),
@@ -586,10 +651,88 @@ vk::raii::ShaderModule av::Presenter::create_shader_module(std::vector<char> con
 //	return device.createShaderModule(shader_module_create_info);
 }
 
+vk::raii::Buffer av::Presenter::create_vertex_buffer(vk::raii::Device const &device, size_t const &num_vertices) {
+	std::cout << num_vertices << std::endl;
+	vk::BufferCreateInfo buffer_create_info{
+		.size = num_vertices * sizeof(Vertex),
+		.usage = vk::BufferUsageFlagBits::eVertexBuffer,
+		.sharingMode = vk::SharingMode::eExclusive,
+	};
+	return {device, buffer_create_info};
+};
+
+std::optional<uint32_t> get_memory_type_index(
+	vk::raii::PhysicalDevice const &physical_device,
+	uint32_t memory_type_bits,
+	vk::MemoryPropertyFlags memory_property_flags
+) {
+	vk::MemoryType x;
+	vk::PhysicalDeviceMemoryProperties memory_properties = physical_device.getMemoryProperties();
+	for (uint32_t memory_type_index = 0; memory_type_index < memory_properties.memoryTypeCount; ++memory_type_index)
+		if ((memory_type_bits & (1 << memory_type_index))
+		    && !(~memory_properties.memoryTypes[memory_type_index].propertyFlags & memory_property_flags))
+			return memory_type_index;
+	return std::nullopt;
+}
+
+vk::raii::DeviceMemory av::Presenter::allocate_vertex_buffer_memory(
+	vk::raii::Device const &device,
+	vk::raii::Buffer const &vertex_buffer,
+	vk::raii::PhysicalDevice const &physical_device
+) {
+	vk::MemoryRequirements memory_requirements = vertex_buffer.getMemoryRequirements();
+	uint32_t memory_type_index;
+	{
+		std::optional<uint32_t> optional_memory_type_index = get_memory_type_index(
+			physical_device,
+			memory_requirements.memoryTypeBits,
+			vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
+		);
+		if (!optional_memory_type_index.has_value())
+			throw std::runtime_error("failed to find suitable memory type");
+		memory_type_index = *optional_memory_type_index;
+	}
+	vk::MemoryAllocateInfo memory_allocate_info{
+		.allocationSize = memory_requirements.size,
+		.memoryTypeIndex = memory_type_index,
+	};
+	return {device, memory_allocate_info};
+}
+
+
+void av::Presenter::bind_vertex_buffer_memory() const {
+	vertex_buffer.bindMemory(*vertex_buffer_memory, 0);
+//	void *data = vertex_buffer_memory.mapMemory(0, num_vertices * sizeof(Vertex), vk::MemoryMapFlags{});
+//	memcpy(data, VERTICES.data(), num_vertices * sizeof(Vertex));
+//	vertex_buffer_memory.unmapMemory();
+}
+
+void av::Presenter::recreate_swapchain() {
+	for (;;) {
+		auto[width, height] = window->getFramebufferSize();
+		if (width && height) break;
+		vkfw::waitEvents();
+		// if window is minimized, wait until it is not minimized
+	}
+	device.waitIdle();
+	// placement new https://stackoverflow.com/a/54645552
+	swapchain_info.~SwapchainInfo();
+	new(&swapchain_info) SwapchainInfo(physical_device, surface, window);
+	swapchain.~SwapchainKHR(); // IMPORTANT !!
+	swapchain = create_swapchain(device, surface, swapchain_info);
+	render_pass = create_render_pass(device, swapchain_info);
+	pipeline = create_pipeline(device, swapchain_info, pipeline_layout, render_pass); // todo make sure the dtors of the old objects actually get called
+	image_views = create_image_views(device, swapchain, swapchain_info);
+	framebuffers = create_framebuffers(device, render_pass, image_views, swapchain_info);
+	framebuffer_resized = false;
+}
+
+
 void av::Presenter::record_graphics_command_buffer(
 	vk::raii::CommandBuffer const &command_buffer,
 	vk::raii::Framebuffer const &framebuffer
 ) const {
+	vk::Extent2D const &swapchain_extent = swapchain_info.get_extent();
 	command_buffer.reset({});
 	vk::CommandBufferBeginInfo command_buffer_begin_info{};
 	command_buffer.begin(command_buffer_begin_info);
@@ -606,7 +749,9 @@ void av::Presenter::record_graphics_command_buffer(
 	};
 	command_buffer.beginRenderPass(render_pass_begin_info, vk::SubpassContents::eInline);
 	command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipeline);
-	command_buffer.draw(3, 1, 0, 0); // wow!
+	command_buffer.bindVertexBuffers(0, {*vertex_buffer}, {0});
+//	command_buffer.draw(3, 1, 0, 0); // wow!
+	command_buffer.draw(num_vertices, 1, 0, 0);
 	command_buffer.endRenderPass();
 	command_buffer.end();
 }
