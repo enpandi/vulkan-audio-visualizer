@@ -1,7 +1,3 @@
-//
-// Created by panda on 22/05/03.
-//
-
 #ifndef AUDIO_VISUALIZER_PRESENTER_H
 #define AUDIO_VISUALIZER_PRESENTER_H
 
@@ -216,6 +212,5 @@ namespace av {
 		static std::vector<char> file_to_chars(std::string const &file_name);
 	};
 }
-
 
 #endif //AUDIO_VISUALIZER_PRESENTER_H
