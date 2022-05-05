@@ -442,7 +442,6 @@ vk::raii::RenderPass av::Presenter::create_render_pass(vk::raii::Device const &d
 		.dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite,
 //		.dependencyFlags = ,
 	}; // this forms a dependency graph
-	// todo i dont understand subpasses
 	vk::RenderPassCreateInfo render_pass_create_info{
 		.attachmentCount = 1,
 		.pAttachments = &attachment_description,
@@ -483,7 +482,7 @@ vk::raii::Pipeline av::Presenter::create_pipeline(
 		.pVertexBindingDescriptions = &vertex_input_binding_description,
 		.vertexAttributeDescriptionCount = vertex_input_attribute_descriptions.size(),
 		.pVertexAttributeDescriptions = vertex_input_attribute_descriptions.data(),
-	}; // todo
+	};
 	vk::PipelineInputAssemblyStateCreateInfo pipeline_input_assembly_state_create_info{
 		.topology = vk::PrimitiveTopology::eTriangleStrip,
 		.primitiveRestartEnable = false,
