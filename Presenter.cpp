@@ -9,7 +9,7 @@
 
 // function definitions are ordered the same way they are in Presenter.h (or at least they should be)
 
-vk::VertexInputBindingDescription constexpr av::Presenter::Vertex::get_binding_description() {
+constexpr vk::VertexInputBindingDescription av::Presenter::Vertex::get_binding_description() {
 	return {
 		.binding = 0,
 		.stride = sizeof(Vertex),
@@ -17,7 +17,7 @@ vk::VertexInputBindingDescription constexpr av::Presenter::Vertex::get_binding_d
 	};
 }
 
-std::array<vk::VertexInputAttributeDescription, 2> constexpr av::Presenter::Vertex::get_attribute_descriptions() {
+constexpr std::array<vk::VertexInputAttributeDescription, 2> av::Presenter::Vertex::get_attribute_descriptions() {
 	return {
 		vk::VertexInputAttributeDescription{
 			.location = 0,
@@ -34,10 +34,10 @@ std::array<vk::VertexInputAttributeDescription, 2> constexpr av::Presenter::Vert
 	};
 }
 
-av::Presenter::Presenter(size_t const &num_vertices)
+av::Presenter::Presenter(size_t const &num_vertices, bool const &floating)
 	: num_vertices{num_vertices}
 	, vkfw_instance{vkfw::initUnique()}
-	, window{vkfw::createWindowUnique(640, 480, "window name")} // todo do a config thing for these values
+	, window{vkfw::createWindowUnique(320, 240, "window name", {.floating = floating})} // todo do a config thing for these values
 	, instance{create_instance(
 		context)}
 	, surface{instance, vkfw::createWindowSurface(*instance, *window)}

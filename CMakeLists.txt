@@ -2,12 +2,12 @@ cmake_minimum_required(VERSION 3.10)
 project(audio_visualizer)
 
 # todo change optimization level in release mode
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Og")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Og -O0")
 # -ftime-report to profile the compilation process
-# -fno-stack-protector to allow compatibility with precompiled headers
+# -fno-stack-protector to allow compatibility with precompiled headers (maybe?)
 set(CMAKE_CXX_STANDARD 20)
 
-add_executable(${PROJECT_NAME} main.cpp Presenter.cpp)
+add_executable(${PROJECT_NAME} main.cpp Presenter.cpp miniaudio_implementation.c Recorder.cpp)
 
 
 # CMake function for shaders

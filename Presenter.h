@@ -22,11 +22,11 @@ namespace av {
 			} color;
 		private:
 			friend class Presenter; // don't know if this is the best way to structure things
-			static vk::VertexInputBindingDescription constexpr get_binding_description();
-			static std::array<vk::VertexInputAttributeDescription, 2> constexpr get_attribute_descriptions();
+			static constexpr vk::VertexInputBindingDescription get_binding_description();
+			static constexpr std::array<vk::VertexInputAttributeDescription, 2> get_attribute_descriptions();
 		};
 
-		Presenter(size_t const &num_vertices);
+		Presenter(size_t const &num_vertices, bool const &floating);
 
 		~Presenter();
 
@@ -61,8 +61,7 @@ namespace av {
 		class SwapchainInfo {
 		public:
 			// delegating constructor https://stackoverflow.com/a/61033668
-			SwapchainInfo(vk::raii::PhysicalDevice const &physical_device, vk::raii::SurfaceKHR const &surface, vkfw::UniqueWindow const &window
-			);
+			SwapchainInfo(vk::raii::PhysicalDevice const &physical_device, vk::raii::SurfaceKHR const &surface, vkfw::UniqueWindow const &window);
 
 			[[nodiscard]] bool is_compatible() const;
 
@@ -119,12 +118,12 @@ namespace av {
 			);
 		};
 
-		static std::array constexpr GLOBAL_LAYERS = {"VK_LAYER_KHRONOS_validation"}; // todo is there a macro for this, or:
-		static std::array constexpr DEVICE_EXTENSIONS = {VK_KHR_SWAPCHAIN_EXTENSION_NAME}; // todo is there a vulkan-hpp constant for this
+		static constexpr std::array GLOBAL_LAYERS = {"VK_LAYER_KHRONOS_validation"}; // todo is there a macro for this, or:
+		static constexpr std::array DEVICE_EXTENSIONS = {VK_KHR_SWAPCHAIN_EXTENSION_NAME}; // todo is there a vulkan-hpp constant for this
 		inline static std::string const APPLICATION_NAME = "audio visualizer";
 		inline static std::string const VERTEX_SHADER_FILE_NAME = "shaders/shader.vert.spv"; // todo can the strings be constexpr?
 		inline static std::string const FRAGMENT_SHADER_FILE_NAME = "shaders/shader.frag.spv"; // https://stackoverflow.com/a/1563906
-		static size_t constexpr MAX_FRAMES_IN_FLIGHT = 2;
+		static constexpr size_t MAX_FRAMES_IN_FLIGHT = 2;
 
 		size_t const num_vertices;
 

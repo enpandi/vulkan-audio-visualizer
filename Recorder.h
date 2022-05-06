@@ -1,72 +1,61 @@
 #ifndef AUDIO_VISUALIZER_RECORDER_H
 #define AUDIO_VISUALIZER_RECORDER_H
 
-#define MINIAUDIO_IMPLEMENTATION
 #include <miniaudio/miniaudio.h>
 
 #include <iostream>
 #include <stdexcept>
 
-// i would put the function definitions in a Recorder.cpp but that causes multiple-definition errors of miniaudio stuff
-// further reading:
-// https://stackoverflow.com/q/29196460
-// https://stackoverflow.com/q/14425262
-// https://stackoverflow.com/q/212006
 
-unsigned long long ct = 0;
+// useful: https://miniaudio.docsforge.com/master/api/ma_device/
+
+// todo handle device change
+
 namespace av {
-	class Recorder {
-	public:
-		Recorder() {
-			ma_device_config config = ma_device_config_init(ma_device_type_capture);
-			config.capture.format = ma_format_f32;
-			config.capture.channels = 0;
-			config.sampleRate = 0;
-			config.dataCallback = data_callback;
-			if (ma_device_init(nullptr, &config, &device) != MA_SUCCESS)
-				throw std::runtime_error("miniaudio failed to initialize device");
-		}
+	// in the interest of performance, i've decided to make everything global.
+	// (the callback function cannot capture variables so it would have to access ma_device.)
+	// i don't know whether this actually helps performance, todo see if this helps performance
+	namespace Recorder {
 
-		~Recorder() { ma_device_uninit(&device); }
+//		static, extern, inline (C++17):
+//		https://stackoverflow.com/a/2328715
+//		https://stackoverflow.com/q/14349877
+//		https://stackoverflow.com/q/30208685
+//		https://stackoverflow.com/q/10422034
+//		https://stackoverflow.com/q/38043442
+//		don't know if all of the keywords i used here are necessary
 
-		void start() { ma_device_start(&device); } // start recording audio samples
+// todo make this a parameter or something?
+		constexpr inline size_t MAX_SAMPLES_RECORDED = 480 * 16;
+		inline float recorded_data[MAX_SAMPLES_RECORDED];
 
-		void stop() { ma_device_stop(&device); } // stop recording audio samples
+// circular queue, only needs one pointer
+// (assume the queue is initialized to the full size; this pointer represents both the beginning and the end)
+		inline float *recorded_data_ptr;
+// todo is there any reason for this to be mutable?
+		constexpr inline float *recorded_data_begin = recorded_data;
+// this could be different from (uintptr_t(recorded_data)+sizeof(recorded_data)) because i'm doing alignment
+		inline float *recorded_data_end;
 
-		static void print_devices() {
-			ma_context context;
-			if (ma_context_init(nullptr, 0, nullptr, &context) != MA_SUCCESS)
-				throw std::runtime_error("miniaudio failed to initialize context");
+// todo these don't behave well if the device changes (probably)
 
-			ma_device_info *pPlaybackDeviceInfos, *pCaptureDeviceInfos;
-			ma_uint32 playbackDeviceCount, captureDeviceCount;
-			if (ma_context_get_devices(
-				&context, &pPlaybackDeviceInfos, &playbackDeviceCount, &pCaptureDeviceInfos, &captureDeviceCount
-			) != MA_SUCCESS)
-				throw std::runtime_error("miniaudio failed to get audio devices");
+//		extern inline ma_uint32 &sample_rate;
 
-			std::cout << "playback devices (* denotes default):" << std::endl;
-			for (ma_uint32 i = 0; i < playbackDeviceCount; ++i) {
-				std::cout << '\t';
-				if (pPlaybackDeviceInfos[i].isDefault)
-					std::cout << "* ";
-				std::cout << pPlaybackDeviceInfos[i].name << std::endl;
-			}
-			std::cout << "capture devices (* denotes default):" << std::endl;
-			for (ma_uint32 i = 0; i < captureDeviceCount; ++i) {
-				std::cout << '\t';
-				if (pCaptureDeviceInfos[i].isDefault)
-					std::cout << "* ";
-				std::cout << pCaptureDeviceInfos[i].name << std::endl;
-			}
-		}
 
-	private:
-		ma_device device;
+		// when there's new audio, this function will get called
+		static void data_callback(ma_device *pDevice, void *const pOutput, void const *const pInput, ma_uint32 frameCount);
 
-		static void data_callback(ma_device *pDevice, void *const pOutput, void const *const pInput, ma_uint32 frameCount) {
-			ct += frameCount;
-		} // todo
+		void print_devices();
+
+		void init();
+
+		void uninit();
+
+		void start();
+
+		void stop();
+
+		float get_sample_rate();
 	};
 }
 
