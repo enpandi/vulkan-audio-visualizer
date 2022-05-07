@@ -34,10 +34,10 @@ constexpr std::array<vk::VertexInputAttributeDescription, 2> av::Presenter::Vert
 	};
 }
 
-av::Presenter::Presenter(size_t const &num_vertices, bool const &floating)
+av::Presenter::Presenter(size_t const &num_vertices, bool const &floating, char const *title, size_t width, size_t height)
 	: num_vertices{num_vertices}
 	, vkfw_instance{vkfw::initUnique()}
-	, window{vkfw::createWindowUnique(320, 240, "window name", {.floating = floating})} // todo do a config thing for these values
+	, window{vkfw::createWindowUnique(width, height, title, {.floating = floating})}
 	, instance{create_instance(
 		context)}
 	, surface{instance, vkfw::createWindowSurface(*instance, *window)}
@@ -47,7 +47,7 @@ av::Presenter::Presenter(size_t const &num_vertices, bool const &floating)
 	, device{create_device(
 		physical_device, swapchain_info)}
 	, swapchain{create_swapchain(
-		device, surface, swapchain_info)}
+		device, surface, swapchain_info, nullptr)}
 	, pipeline_layout{create_pipeline_layout(
 		device)}
 	, render_pass{create_render_pass(
@@ -258,8 +258,7 @@ av::Presenter::SwapchainInfo::choose_surface_format(vk::raii::PhysicalDevice con
 		if (surface_format.format == vk::Format::eB8G8R8A8Srgb
 		    && surface_format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear)
 			return surface_format;
-	return surface_formats.front();
-	// todo mess around with this
+	return surface_formats.front(); // try different formats
 }
 
 std::optional<vk::PresentModeKHR>
@@ -270,9 +269,7 @@ av::Presenter::SwapchainInfo::choose_present_mode(vk::raii::PhysicalDevice const
 	for (vk::PresentModeKHR const &present_mode : present_modes)
 		if (present_mode == vk::PresentModeKHR::eMailbox)
 			return present_mode;
-	return vk::PresentModeKHR::eFifo;
-	// todo mess around with this e.g. immediate, fifo relaxed
-	// todo prefer fifo for low energy consumption
+	return vk::PresentModeKHR::eFifo; // try different modes
 }
 
 av::Presenter::SwapchainInfo::SwapchainInfo(
@@ -309,19 +306,17 @@ vk::raii::Instance av::Presenter::create_instance(vk::raii::Context const &conte
 	std::span<char const *const> glfw_extensions = vkfw::getRequiredInstanceExtensions();
 	vk::InstanceCreateInfo instance_create_info{
 		.pApplicationInfo = &application_info,
-		.enabledLayerCount = GLOBAL_LAYERS.size(),
+		.enabledLayerCount = static_cast<uint32_t>(GLOBAL_LAYERS.size()),
 		.ppEnabledLayerNames = GLOBAL_LAYERS.data(),
 		.enabledExtensionCount = static_cast<uint32_t>(glfw_extensions.size()),
 		.ppEnabledExtensionNames = glfw_extensions.data(),
 	};
 	return {context, instance_create_info};
-//	return context.createInstance(instance_create_info);
 }
 
 vk::raii::PhysicalDevice av::Presenter::choose_physical_device(vk::raii::Instance const &instance, vk::raii::SurfaceKHR const &surface) {
 	vk::raii::PhysicalDevices physical_devices(instance);
 	std::vector<av::Presenter::QueueFamilyIndices> queue_families_indices;
-//	std::vector<av::Presenter::SwapchainInfo> swapchain_infos;
 	queue_families_indices.reserve(physical_devices.size());
 	std::transform(physical_devices.begin(), physical_devices.end(), std::back_inserter(queue_families_indices),
 	               [&](vk::raii::PhysicalDevice const &physical_device) {
@@ -337,9 +332,7 @@ vk::raii::PhysicalDevice av::Presenter::choose_physical_device(vk::raii::Instanc
 	for (uint32_t physical_device_index : usable_physical_device_indices)
 		if (physical_devices[physical_device_index].getProperties().deviceType == vk::PhysicalDeviceType::eDiscreteGpu)
 			return std::move(physical_devices[physical_device_index]);
-//			return {std::move(physical_devices[physical_device_index]), swapchain_infos[physical_device_index]};
 	return std::move(physical_devices.front());
-//	return {std::move(physical_devices.front()), swapchain_infos.front()};
 }
 
 vk::raii::Device av::Presenter::create_device(vk::raii::PhysicalDevice const &physical_device, av::Presenter::SwapchainInfo const &swapchain_info) {
@@ -356,20 +349,20 @@ vk::raii::Device av::Presenter::create_device(vk::raii::PhysicalDevice const &ph
 	vk::DeviceCreateInfo device_create_info{
 		.queueCreateInfoCount = static_cast<uint32_t>(device_queue_create_infos.size()),
 		.pQueueCreateInfos = device_queue_create_infos.data(),
-		.enabledLayerCount = GLOBAL_LAYERS.size(),
+		.enabledLayerCount = static_cast<uint32_t>(GLOBAL_LAYERS.size()),
 		.ppEnabledLayerNames = GLOBAL_LAYERS.data(),
 		.enabledExtensionCount = DEVICE_EXTENSIONS.size(),
 		.ppEnabledExtensionNames = DEVICE_EXTENSIONS.data(),
 		.pEnabledFeatures = &enabled_features,
 	};
 	return {physical_device, device_create_info};
-//	return physical_device.createDevice(device_create_info);
 }
 
 vk::raii::SwapchainKHR av::Presenter::create_swapchain(
 	vk::raii::Device const &device,
 	vk::raii::SurfaceKHR const &surface,
-	av::Presenter::SwapchainInfo const &swapchain_info
+	av::Presenter::SwapchainInfo const &swapchain_info,
+	vk::raii::SwapchainKHR const &old_swapchain
 ) {
 	uint32_t const &graphics_queue_family_index = swapchain_info.get_graphics_queue_family_index();
 	uint32_t const &present_queue_family_index = swapchain_info.get_present_queue_family_index();
@@ -393,14 +386,11 @@ vk::raii::SwapchainKHR av::Presenter::create_swapchain(
 		                    vk::SharingMode::eExclusive : vk::SharingMode::eConcurrent,
 		.queueFamilyIndexCount = queue_family_index_array.size(),
 		.pQueueFamilyIndices = queue_family_index_array.data(),
-		.preTransform = surface_capabilities.currentTransform, // default???
-		.compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque, // default
 		.presentMode = present_mode,
 		.clipped = true,
-//		.oldSwapchain = VK_NULL_HANDLE, // ???
+		.oldSwapchain = *old_swapchain,
 	};
 	return {device, swapchain_create_info};
-//	return device.createSwapchainKHR(swapchain_create_info);
 }
 
 vk::raii::PipelineLayout av::Presenter::create_pipeline_layout(vk::raii::Device const &device) {
@@ -409,7 +399,6 @@ vk::raii::PipelineLayout av::Presenter::create_pipeline_layout(vk::raii::Device 
 		.pushConstantRangeCount = 0,
 	};
 	return {device, pipeline_layout_create_info};
-//	return device.createPipelineLayout(pipeline_layout_create_info);
 }
 
 vk::raii::RenderPass av::Presenter::create_render_pass(vk::raii::Device const &device, av::Presenter::SwapchainInfo const &swapchain_info) {
@@ -417,7 +406,7 @@ vk::raii::RenderPass av::Presenter::create_render_pass(vk::raii::Device const &d
 	vk::AttachmentDescription attachment_description{
 		.format = swapchain_format,
 		.samples = vk::SampleCountFlagBits::e1,
-		.loadOp = vk::AttachmentLoadOp::eClear,  // todo experiment with these, particularly dontcare
+		.loadOp = vk::AttachmentLoadOp::eDontCare,
 		.storeOp = vk::AttachmentStoreOp::eStore,
 		.stencilLoadOp = vk::AttachmentLoadOp::eDontCare,
 		.stencilStoreOp = vk::AttachmentStoreOp::eDontCare,
@@ -434,13 +423,12 @@ vk::raii::RenderPass av::Presenter::create_render_pass(vk::raii::Device const &d
 		.pColorAttachments = &attachment_reference,
 	};
 	vk::SubpassDependency subpass_dependency{
-		.srcSubpass = VK_SUBPASS_EXTERNAL, // todo find a macro for this
+		.srcSubpass = VK_SUBPASS_EXTERNAL,
 		.dstSubpass = 0,
 		.srcStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput,
 		.dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput,
 		.srcAccessMask = {},
 		.dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite,
-//		.dependencyFlags = ,
 	}; // this forms a dependency graph
 	vk::RenderPassCreateInfo render_pass_create_info{
 		.attachmentCount = 1,
@@ -451,7 +439,6 @@ vk::raii::RenderPass av::Presenter::create_render_pass(vk::raii::Device const &d
 		.pDependencies = &subpass_dependency,
 	};
 	return {device, render_pass_create_info};
-//	return device.createRenderPass(render_pass_create_info);
 }
 
 vk::raii::Pipeline av::Presenter::create_pipeline(
@@ -463,7 +450,7 @@ vk::raii::Pipeline av::Presenter::create_pipeline(
 	std::vector<char> vertex_shader_code = file_to_chars(VERTEX_SHADER_FILE_NAME);
 	vk::raii::ShaderModule vertex_shader_module = av::Presenter::create_shader_module(device, vertex_shader_code);
 	vk::PipelineShaderStageCreateInfo vertex_shader_stage_create_info{
-		.stage = vk::ShaderStageFlagBits::eVertex, // why is this default
+		.stage = vk::ShaderStageFlagBits::eVertex,
 		.module = *vertex_shader_module,
 		.pName = "main",
 	};
@@ -487,7 +474,6 @@ vk::raii::Pipeline av::Presenter::create_pipeline(
 		.topology = vk::PrimitiveTopology::eTriangleStrip,
 		.primitiveRestartEnable = false,
 	};
-//	vk::PipelineTessellationStateCreateInfo tesselation_state_info{};
 	vk::Extent2D const &swapchain_extent = swapchain_info.get_extent();
 	vk::Viewport viewport{
 		.x = 0.0f,
@@ -510,26 +496,23 @@ vk::raii::Pipeline av::Presenter::create_pipeline(
 	vk::PipelineRasterizationStateCreateInfo pipeline_rasterization_state_create_info{
 //		.depthClampEnable = false,
 //		.rasterizerDiscardEnable = false,
-		.polygonMode = vk::PolygonMode::eFill, // todo mess with these settings
-//		.cullMode = vk::CullModeFlagBits::eNone, // todo take advantage of culling and tristrip when drawing the spectrum
+		.polygonMode = vk::PolygonMode::eFill,
+//		.cullMode = vk::CullModeFlagBits::eNone,
 //		.frontFace = vk::FrontFace::eClockwise,
 //		.depthBiasEnable = false,
 		.lineWidth = 1.0f,
 	};
 	vk::PipelineMultisampleStateCreateInfo pipeline_multisample_state_create_info{
-		.rasterizationSamples = vk::SampleCountFlagBits::e1, // default
-		.sampleShadingEnable = false, // hmm
+		.rasterizationSamples = vk::SampleCountFlagBits::e1,
+		.sampleShadingEnable = false,
 	};
 	vk::PipelineColorBlendAttachmentState pipeline_color_blend_attachment_state{
-//		.blendEnable = false,
+		.blendEnable = false,
 		.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA,
 	};
 	vk::PipelineColorBlendStateCreateInfo pipeline_color_blend_state_create_info{
-//		.logicOpEnable = false,
-//		.logicOp = vk::LogicOp::eCopy, // the default is clear?
 		.attachmentCount = 1,
 		.pAttachments = &pipeline_color_blend_attachment_state,
-//		.blendConstants = {}, // what is this
 	};
 
 
@@ -538,21 +521,15 @@ vk::raii::Pipeline av::Presenter::create_pipeline(
 		.pStages = pipeline_shader_stage_create_infos.data(),
 		.pVertexInputState = &pipeline_vertex_input_state_create_info,
 		.pInputAssemblyState = &pipeline_input_assembly_state_create_info,
-//		.pTessellationState,
 		.pViewportState = &pipeline_viewport_state_create_info,
 		.pRasterizationState = &pipeline_rasterization_state_create_info,
 		.pMultisampleState = &pipeline_multisample_state_create_info,
-//		.pDepthStencilState,
 		.pColorBlendState = &pipeline_color_blend_state_create_info,
-//		.pDynamicState,
 		.layout = *pipeline_layout,
 		.renderPass = *render_pass,
 		.subpass = 0,
-//		.basePipelineHandle,
-//		.basePipelineIndex,
 	};
 	return {device, nullptr, graphics_pipeline_create_info};
-//	return device.createGraphicsPipeline(nullptr, graphics_pipeline_create_info);
 }
 
 std::vector<vk::raii::ImageView>
@@ -571,7 +548,7 @@ av::Presenter::create_image_views(vk::raii::Device const &device, vk::raii::Swap
 				.g = vk::ComponentSwizzle::eIdentity,
 				.b = vk::ComponentSwizzle::eIdentity,
 				.a = vk::ComponentSwizzle::eIdentity,
-			}, // todo mess with the color swizzling here
+			},
 			.subresourceRange{
 				.aspectMask = vk::ImageAspectFlagBits::eColor,
 				.baseMipLevel = 0,
@@ -616,7 +593,6 @@ vk::raii::CommandPool av::Presenter::create_command_pool(vk::raii::Device const 
 		.queueFamilyIndex = graphics_queue_family_index,
 	};
 	return {device, command_pool_create_info};
-//	return device.createCommandPool(command_pool_create_info);
 }
 
 vk::raii::CommandBuffers av::Presenter::allocate_command_buffers(vk::raii::Device const &device, vk::raii::CommandPool const &graphics_command_pool) {
@@ -626,7 +602,6 @@ vk::raii::CommandBuffers av::Presenter::allocate_command_buffers(vk::raii::Devic
 		.commandBufferCount = MAX_FRAMES_IN_FLIGHT,
 	};
 	return {device, command_buffer_allocate_info};
-//	return device.allocateCommandBuffers(command_buffer_allocate_info);
 }
 
 std::vector<av::Presenter::FrameSyncPrimitives> av::Presenter::create_frame_sync_signalers(vk::raii::Device const &device) {
@@ -647,7 +622,6 @@ vk::raii::ShaderModule av::Presenter::create_shader_module(vk::raii::Device cons
 		.pCode = reinterpret_cast<uint32_t const *>(code_chars.data()),
 	};
 	return {device, shader_module_create_info};
-//	return device.createShaderModule(shader_module_create_info);
 }
 
 vk::raii::Buffer av::Presenter::create_vertex_buffer(vk::raii::Device const &device, size_t const &num_vertices) {
@@ -701,12 +675,10 @@ vk::raii::DeviceMemory av::Presenter::allocate_vertex_buffer_memory(
 
 void av::Presenter::bind_vertex_buffer_memory() const {
 	vertex_buffer.bindMemory(*vertex_buffer_memory, 0);
-//	void *data = vertex_buffer_memory.mapMemory(0, num_vertices * sizeof(Vertex), vk::MemoryMapFlags{});
-//	memcpy(data, VERTICES.data(), num_vertices * sizeof(Vertex));
-//	vertex_buffer_memory.unmapMemory();
 }
 
 void av::Presenter::recreate_swapchain() {
+	// todo known issue: in release mode, this doesn't work (presumably because i'm not setting the old swapchain)
 	for (;;) {
 		auto[width, height] = window->getFramebufferSize();
 		if (width && height) break;
@@ -717,10 +689,9 @@ void av::Presenter::recreate_swapchain() {
 	// placement new https://stackoverflow.com/a/54645552
 	swapchain_info.~SwapchainInfo();
 	new(&swapchain_info) SwapchainInfo(physical_device, surface, window);
-	swapchain.~SwapchainKHR(); // IMPORTANT !!
-	swapchain = create_swapchain(device, surface, swapchain_info);
+	swapchain = create_swapchain(device, surface, swapchain_info, swapchain);
 	render_pass = create_render_pass(device, swapchain_info);
-	pipeline = create_pipeline(device, swapchain_info, pipeline_layout, render_pass); // todo make sure the dtors of the old objects actually get called
+	pipeline = create_pipeline(device, swapchain_info, pipeline_layout, render_pass);
 	image_views = create_image_views(device, swapchain, swapchain_info);
 	framebuffers = create_framebuffers(device, render_pass, image_views, swapchain_info);
 	framebuffer_resized = false;
@@ -749,7 +720,6 @@ void av::Presenter::record_graphics_command_buffer(
 	command_buffer.beginRenderPass(render_pass_begin_info, vk::SubpassContents::eInline);
 	command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipeline);
 	command_buffer.bindVertexBuffers(0, {*vertex_buffer}, {0});
-//	command_buffer.draw(3, 1, 0, 0); // wow!
 	command_buffer.draw(num_vertices, 1, 0, 0);
 	command_buffer.endRenderPass();
 	command_buffer.end();

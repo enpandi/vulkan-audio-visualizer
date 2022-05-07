@@ -26,7 +26,7 @@ namespace av {
 			static constexpr std::array<vk::VertexInputAttributeDescription, 2> get_attribute_descriptions();
 		};
 
-		Presenter(size_t const &num_vertices, bool const &floating);
+		Presenter(size_t const &num_vertices, bool const &floating, char const *title, size_t width = 320, size_t height = 240);
 
 		~Presenter();
 
@@ -37,7 +37,7 @@ namespace av {
 		// upload vertices to the vertex buffer
 		// todo this is probably not fast
 		// todo try https://redd.it/aij7zp
-		void set_vertices(Vertex const *const vertices) const;
+		void set_vertices(Vertex const *vertices) const;
 
 		void draw_frame();
 
@@ -118,8 +118,13 @@ namespace av {
 			);
 		};
 
-		static constexpr std::array GLOBAL_LAYERS = {"VK_LAYER_KHRONOS_validation"}; // todo is there a macro for this, or:
-		static constexpr std::array DEVICE_EXTENSIONS = {VK_KHR_SWAPCHAIN_EXTENSION_NAME}; // todo is there a vulkan-hpp constant for this
+		// are there constants for the layer/extension names?
+		inline static std::vector<char const *> const GLOBAL_LAYERS{
+#ifdef DEBUG
+			"VK_LAYER_KHRONOS_validation"
+#endif
+		};
+		static constexpr std::array DEVICE_EXTENSIONS = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 		inline static std::string const APPLICATION_NAME = "audio visualizer";
 		inline static std::string const VERTEX_SHADER_FILE_NAME = "shaders/shader.vert.spv"; // todo can the strings be constexpr?
 		inline static std::string const FRAGMENT_SHADER_FILE_NAME = "shaders/shader.frag.spv"; // https://stackoverflow.com/a/1563906
@@ -160,7 +165,12 @@ namespace av {
 
 		static vk::raii::Device create_device(vk::raii::PhysicalDevice const &, av::Presenter::SwapchainInfo const &);
 
-		static vk::raii::SwapchainKHR create_swapchain(vk::raii::Device const &, vk::raii::SurfaceKHR const &, av::Presenter::SwapchainInfo const &);
+		static vk::raii::SwapchainKHR create_swapchain(
+			vk::raii::Device const &,
+			vk::raii::SurfaceKHR const &,
+			av::Presenter::SwapchainInfo const &,
+			vk::raii::SwapchainKHR const &old_swapchain
+		);
 
 		static vk::raii::PipelineLayout create_pipeline_layout(vk::raii::Device const &);
 

@@ -1,12 +1,6 @@
 #include "Recorder.h"
 
 #include <cstring>
-#include <cassert>
-
-// one second of 192KHz audio should be sufficient
-constexpr static size_t MAX_SAMPLES_RECORDED = 192000;
-
-//static float recorded_data[MAX_SAMPLES_RECORDED];
 
 static bool is_initialized = false;
 static bool is_running = false;
@@ -14,26 +8,16 @@ static bool is_running = false;
 // circular queue, only needs one pointer
 // (assume the queue is initialized to the full size; this pointer represents both the beginning and the end)
 float *recorded_data_ptr;
-// todo is there any reason for this to be mutable?
-//constexpr float *recorded_data_begin = recorded_data;
-// this could be different from (uintptr_t(recorded_data)+sizeof(recorded_data)) because i'm doing alignment
+
+// this could be different from (uintptr_t(recorded_data)+sizeof(recorded_data)) because i'm aligning to the period size
 float *recorded_data_end;
 
 static ma_device device;
-// todo these don't behave well if the device changes (probably)
 
-//inline ma_uint32 &sample_rate = device.sampleRate;
-//		static ma_uint32 &channel_count = device.capture.channels;
 constexpr ma_uint32 &period_size_in_frames = device.capture.internalPeriodSizeInFrames;
 
 void av::Recorder::data_callback(ma_device *pDevice, void *const pOutput, void const *const pInput, ma_uint32 frameCount) {
-//	todo this could be faster if i implement downmixing myself https://dsp.stackexchange.com/q/3581
-	assert(pDevice->capture.channels == 1);
-	// todo idk if this is guaranteed but it would make things faster
-	// todo benchmark this and stuff
-	assert(frameCount == period_size_in_frames);
-	assert(recorded_data_begin <= recorded_data_ptr && recorded_data_ptr <= recorded_data_end);
-
+//	todo maybe implement downmixing manually https://dsp.stackexchange.com/q/3581
 	float *recorded_data_new_ptr = recorded_data_ptr + period_size_in_frames;
 	if (recorded_data_new_ptr == recorded_data_end) {
 		recorded_data_ptr = recorded_data_begin;
@@ -43,7 +27,7 @@ void av::Recorder::data_callback(ma_device *pDevice, void *const pOutput, void c
 	recorded_data_ptr = recorded_data_new_ptr;
 }
 
-void av::Recorder::print_devices() {
+void av::Recorder::print_recording_devices() {
 	ma_context context;
 	if (ma_context_init(nullptr, 0, nullptr, &context) != MA_SUCCESS)
 		throw std::runtime_error("miniaudio failed to initialize context");
@@ -55,13 +39,6 @@ void av::Recorder::print_devices() {
 	) != MA_SUCCESS)
 		throw std::runtime_error("miniaudio failed to get audio devices");
 
-//	std::cout << "playback devices (* denotes default):" << std::endl;
-//	for (ma_uint32 i = 0; i < playbackDeviceCount; ++i) {
-//		std::cout << '\t';
-//		if (pPlaybackDeviceInfos[i].isDefault)
-//			std::cout << "* ";
-//		std::cout << pPlaybackDeviceInfos[i].name << std::endl;
-//	}
 	std::cout << "capture devices (* denotes default):" << std::endl;
 	for (ma_uint32 i = 0; i < captureDeviceCount; ++i) {
 		std::cout << '\t';
@@ -87,9 +64,6 @@ void av::Recorder::init() {
 	recorded_data_ptr = recorded_data_begin;
 	// round the size of the queue down to the nearest period_size_in_frames
 	recorded_data_end = recorded_data_begin + MAX_SAMPLES_RECORDED / period_size_in_frames * period_size_in_frames;
-	assert(recorded_data_begin <= recorded_data_end && recorded_data_end <= recorded_data + sizeof(recorded_data));
-	assert((recorded_data_end - recorded_data_begin) % period_size_in_frames == 0);
-	assert(period_size_in_frames <= (recorded_data_end - recorded_data_begin));
 }
 
 void av::Recorder::uninit() {
@@ -113,4 +87,4 @@ void av::Recorder::stop() {
 	ma_device_stop(&device);
 }
 
-float av::Recorder::get_sample_rate() { return device.sampleRate; }
+float av::Recorder::get_sample_rate() { return static_cast<float>(device.sampleRate); }
