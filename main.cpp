@@ -9,10 +9,12 @@
 namespace timer {
 	std::chrono::time_point<std::chrono::steady_clock> start_time;
 
+	// start stopwatch
 	void start() {
 		start_time = std::chrono::steady_clock::now();
 	}
 
+	// stop stopwatch and print message
 	void stop(char const *message) {
 		auto stop_time = std::chrono::steady_clock::now();
 		auto nanos = std::chrono::duration_cast<std::chrono::nanoseconds>(stop_time - start_time).count();
@@ -24,6 +26,7 @@ namespace timer {
 	uint64_t frame_count = 0;
 	uint64_t prev_frame_count;
 
+	// call this once per frame
 	void fps() {
 		if (!frame_count)
 			prev_frame_time = std::chrono::steady_clock::now();
@@ -49,9 +52,11 @@ namespace timer {
 // frequency at the coordinate y=0
 constexpr long double center_frequency = 440.0l;
 
+// 24 -- each frequencies is spaced a quarter-tone apart
+constexpr unsigned int frequencies_per_octave = 24;
+
 // multiplicative difference between adjacent frequencies
-long double const frequency_factor = powl(2.0l, 1.0l / 24.0l);
-// frequencies are spaced a quarter-tone apart
+long double const frequency_factor = powl(2.0l, 1.0l / frequencies_per_octave);
 
 // visual space between adjacent frequencies, based on normalized device coordinates
 constexpr long double viewport_y_interval = 0.01l;
@@ -111,18 +116,32 @@ void generate_goertzel_constants(long double sample_rate) {
 		goertzel_coeffs.emplace_back(2.0l * cosl(tau * f / sample_rate));
 }
 
+std::vector<float> s0, s1, s2;
 std::vector<float> mag_sq; // squared magnitudes (the outputs of the goertzel algorithm)
-void compute_goertzel() {
+void compute_goertzel(av::Recorder const &rec) {
 	// todo SSE/AVX ? also check if the compiler does it automatically
+/*
 	for (size_t i = 0; i < num_freqs; ++i) {
 		float const &g = goertzel_coeffs[i];
 		float s0 = 0.0f, s1 = 0.0f, s2 = 0.0f;
-		for (float *p = av::Recorder::recorded_data_begin; p != av::Recorder::recorded_data_end; ++p) {
+		for (float *p = rec.sample_history_begin; p != rec.sample_history_end; ++p) {
 			s0 = g * s1 - s2 + *p;
 			s2 = s1;
 			s1 = s0;
 		} // it's fine if the signal isn't in order
 		mag_sq[i] = s1 * s1 + s2 * s2 - s1 * s2 * g;
+	}
+*/
+	std::ranges::fill(s1, 0.0f);
+	std::ranges::fill(s2, 0.0f);
+	for (float *p = rec.sample_history_begin; p != rec.sample_history_end; ++p) {
+		float sample = *p;
+		for (size_t i = 0; i < num_freqs; ++i)
+			s0[i] = goertzel_coeffs[i] * s1[i] - s2[i] + sample;
+		s2 = s1;
+		s1 = s0;
+		for (size_t i = 0; i < num_freqs; ++i)
+			mag_sq[i] = s1[i] * s1[i] + s2[i] * s2[i] - s1[i] * s2[i] * goertzel_coeffs[i];
 	}
 }
 
@@ -167,16 +186,20 @@ std::vector<av::Presenter::Vertex::Color> make_rainbow(size_t n) {
 }
 
 constexpr float dampening_factor = 0.95f; // higher values mean the max volume (for normalization) will decrease slower
-constexpr unsigned int target_fps = 1000;
-//constexpr unsigned int target_nanoseconds_per_frame = 1000000000/target_fps;
-constexpr unsigned int target_nanoseconds_per_frame = 0;
+constexpr unsigned int target_fps = 90;
+constexpr unsigned int target_nanoseconds_per_frame = 1000000000 / target_fps;
+constexpr unsigned long long target_nanoseconds_per_rainbow_cycle = 8e9;
+//constexpr unsigned int target_nanoseconds_per_frame = 0;
 static_assert(0.0f < dampening_factor && dampening_factor < 1.0f);
 
 int main() {
 	try {
-		av::Recorder::init();
+		av::Recorder rec(480 * 8);
 		generate_frequencies_and_y_values();
-		generate_goertzel_constants(av::Recorder::get_sample_rate());
+		generate_goertzel_constants(rec.get_sample_rate());
+		s0.resize(num_freqs);
+		s1.resize(num_freqs);
+		s2.resize(num_freqs);
 		mag_sq.resize(num_freqs);
 
 		using Vertex = av::Presenter::Vertex;
@@ -193,28 +216,29 @@ int main() {
 
 		// a lot of this work can probably be put in the shader todo
 
-		std::vector rainbow = make_rainbow(num_freqs * 3);
+		std::vector rainbow = make_rainbow(frequencies_per_octave);
 
 		timer::start();
 		av::Presenter presenter(vertices.size(), true, "av");
 		timer::stop("initialization");
 
+		rec.start();
 		// relevant to normalization https://en.wikipedia.org/wiki/Parseval%27s_theorem
-		av::Recorder::start();
-		// limit the fps
+		// use steady_clock to limit the fps
 		std::chrono::steady_clock::time_point frame_start = std::chrono::steady_clock::now();
+		std::chrono::steady_clock::time_point rainbow_stage_start = frame_start;
 		float max_mag = 0.0f;
-		size_t rainbow_offset = 0;
+//		size_t rainbow_offset = 0; // cycle through the colors
 		while (presenter.is_running()) {
-			compute_goertzel();
+			compute_goertzel(rec);
 			max_mag = std::max(max_mag * dampening_factor, *std::max_element(mag_sq.begin(), mag_sq.end()));
 			for (size_t i = 0; i < num_freqs; ++i) {
-				Vertex::Color const &color = rainbow[(i + rainbow_offset) % rainbow.size()];
+//				Vertex::Color const &color = rainbow[(i + rainbow_offset) % rainbow.size()];
+				Vertex::Color const &color = rainbow[i % rainbow.size()];
 				vertices[i].color.r = color.r * mag_sq[i] / max_mag;
 				vertices[i].color.g = color.g * mag_sq[i] / max_mag;
 				vertices[i].color.b = color.b * mag_sq[i] / max_mag;
 			}
-			++rainbow_offset;
 
 			presenter.set_vertices(vertices.data());
 			presenter.draw_frame();
@@ -226,11 +250,14 @@ int main() {
 					(frame_end = std::chrono::steady_clock::now()) - frame_start
 				).count() < target_nanoseconds_per_frame);
 			frame_start = frame_end;
+
+//			if (std::chrono::duration_cast<std::chrono::nanoseconds>(
+//				(frame_end = std::chrono::steady_clock::now()) - rainbow_stage_start
+//			).count() > target_nanoseconds_per_rainbow_cycle / rainbow.size()) {
+//				rainbow_stage_start = frame_end;
+//				++rainbow_offset;
+//			}
 		}
-
-		av::Recorder::stop();
-		av::Recorder::uninit(); // todo RAII
-
 	} catch (std::system_error &err) {
 		std::cerr << "std::system_error: code " << err.code() << ": " << err.what() << std::endl;
 		std::exit(EXIT_FAILURE);
