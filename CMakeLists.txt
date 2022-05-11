@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.12)
 project(audio_visualizer)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra")
@@ -19,9 +19,9 @@ function(add_shader TARGET SHADER)
 	# On Android, the NDK includes the binary, so no external dependency.
 	if(ANDROID)
 		file(GLOB glslc-folders ${ANDROID_NDK}/shader-tools/*)
-		find_program(GLSLC glslc HINTS ${glslc-folders})
+		find_program(GLSLC glslc REQUIRED HINTS ${glslc-folders})
 	else()
-		find_program(GLSLC glslc)
+		find_program(GLSLC glslc REQUIRED)
 	endif()
 
 	# All shaders for a sample are found here.
