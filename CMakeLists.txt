@@ -8,7 +8,7 @@ set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O2")
 # -fno-stack-protector to allow compatibility with precompiled headers (maybe?)
 set(CMAKE_CXX_STANDARD 20)
 
-add_executable(${PROJECT_NAME} main.cpp Presenter.cpp miniaudio_implementation.c Recorder.cpp)
+add_executable(${PROJECT_NAME} main.cpp Renderer.cpp miniaudio_implementation.c Recorder.cpp)
 
 
 # CMake function for shaders

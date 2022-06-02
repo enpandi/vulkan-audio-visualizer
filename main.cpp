@@ -1,4 +1,4 @@
-#include "Presenter.h"
+#include "Renderer.h"
 #include "Recorder.h"
 
 #include <cmath>
@@ -154,8 +154,8 @@ void compute_goertzel(av::Recorder &rec, std::vector<float> const &goertzel_cons
 	}
 }
 
-std::vector<av::Presenter::Vertex::Color> make_rainbow(size_t n) {
-	std::vector<av::Presenter::Vertex::Color> rainbow(n);
+std::vector<av::Renderer::Vertex::Color> make_rainbow(size_t n) {
+	std::vector<av::Renderer::Vertex::Color> rainbow(n);
 	for (size_t i = 0; i < n; ++i) {
 		float h = i * 6.0l / n;
 		switch ((size_t) h) {
@@ -225,31 +225,40 @@ int main() {
 		s2.resize(num_freqs);
 		mag.resize(num_freqs);
 
-		using Vertex = av::Presenter::Vertex;
+		using Vertex = av::Renderer::Vertex;
+
+		std::vector<Vertex::Color> rainbow = make_rainbow(freqs_per_octave);
+
 		std::vector<Vertex> vertices;
 		vertices.reserve(num_freqs * 2 + 4);
 		vertices.emplace_back(Vertex{{-1.0f, +1.0f},
-		                             {},});
+		                             {},
+		                             0.0f,});
 		vertices.emplace_back(Vertex{{+1.0f, +1.0f},
-		                             {},});
+		                             {},
+		                             0.0f,});
 		for (size_t i = 0; i < num_freqs; ++i) {
 			vertices.emplace_back(
 				Vertex{
 					{-1.0f, y_values[i]},
-					{},
+					rainbow[i % freqs_per_octave],
+					0.0f,
 				}
 			);
 			vertices.emplace_back(
 				Vertex{
 					{+1.0f, y_values[i]},
-					{},
+					rainbow[i % freqs_per_octave],
+					0.0f,
 				}
 			);
 		}
 		vertices.emplace_back(Vertex{{-1.0f, -1.0f},
-		                             {},});
+		                             {},
+		                             0.0f,});
 		vertices.emplace_back(Vertex{{+1.0f, -1.0f},
-		                             {},});
+		                             {},
+		                             0.0f,});
 
 		for (auto &&v : vertices) {
 			std::cout << v.position.x << ',' << v.position.y << '\n';
@@ -257,10 +266,8 @@ int main() {
 
 		// a lot of this work can probably be put in the shader todo
 
-		std::vector rainbow = make_rainbow(freqs_per_octave);
-
 //		timer::start();
-		av::Presenter presenter(240, 800, "av", false, vertices);
+		av::Renderer presenter(240, 800, "av", false, vertices);
 //		timer::stop();
 
 		rec.start();
@@ -279,19 +286,15 @@ int main() {
 				mag[i] *= frequencies[i];
 			max_mag = std::max(max_mag * dampening_factor, *std::max_element(mag.begin(), mag.end()));
 			for (size_t i = 0; i < num_freqs; ++i) {
-				Vertex::Color const &color = rainbow[(i + rainbow_offset) % rainbow.size()];
+//				Vertex::Color const &color = rainbow[(i + rainbow_offset) % rainbow.size()];
 //				Vertex::Color const &color = rainbow[i % rainbow.size()];
 				bool yes = (i == 0 && mag[0] > mag[1])
 				           || (i == num_freqs - 1 && mag[num_freqs - 1] > mag[num_freqs - 2])
 				           || (mag[i] > mag[i - 1] && mag[i] > mag[i + 1]);
 				if (yes || true) {
-					vertices[i * 2 + 2].color = vertices[i * 2 + 3].color = {
-						color.r * mag[i] / max_mag,
-						color.g * mag[i] / max_mag,
-						color.b * mag[i] / max_mag,
-					};
+					vertices[i * 2 + 2].color_multiplier = vertices[i * 2 + 3].color_multiplier = mag[i] / max_mag;
 				} else
-					vertices[i * 2 + 2].color = vertices[i * 2 + 3].color = {0.0f, 0.0f, 0.0f};
+					vertices[i * 2 + 2].color_multiplier = vertices[i * 2 + 3].color_multiplier = 0.0f;
 			}
 
 			presenter.set_vertices(vertices.data());

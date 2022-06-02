@@ -1,4 +1,4 @@
-#include "Presenter.h"
+#include "Renderer.h"
 
 #include <fstream>
 #include <iostream>
@@ -7,9 +7,9 @@
 
 // todo MORE INCLUDES MAY BE NECESSARY ON OTHER PLATFORMS IDK GOTTA TEST
 
-// function definitions are ordered the same way they are in Presenter.h (or at least they should be)
+// function definitions are ordered the same way they are in Renderer.h (or at least they should be)
 
-constexpr vk::VertexInputBindingDescription av::Presenter::Vertex::get_binding_description() {
+constexpr vk::VertexInputBindingDescription av::Renderer::Vertex::get_binding_description() {
 	return {
 		.binding = 0,
 		.stride = sizeof(Vertex),
@@ -17,7 +17,7 @@ constexpr vk::VertexInputBindingDescription av::Presenter::Vertex::get_binding_d
 	};
 }
 
-constexpr std::array<vk::VertexInputAttributeDescription, 2> av::Presenter::Vertex::get_attribute_descriptions() {
+constexpr std::array<vk::VertexInputAttributeDescription, 3> av::Renderer::Vertex::get_attribute_descriptions() {
 	return {
 		vk::VertexInputAttributeDescription{
 			.location = 0,
@@ -31,10 +31,16 @@ constexpr std::array<vk::VertexInputAttributeDescription, 2> av::Presenter::Vert
 			.format = vk::Format::eR32G32B32Sfloat,
 			.offset = offsetof(Vertex, color),
 		},
+		vk::VertexInputAttributeDescription{
+			.location = 2,
+			.binding = 0,
+			.format = vk::Format::eR32Sfloat,
+			.offset = offsetof(Vertex, color_multiplier),
+		},
 	};
 }
 
-std::optional<av::Presenter::QueueFamilyIndices> av::Presenter::QueueFamilyIndices::get_queue_family_indices(
+std::optional<av::Renderer::QueueFamilyIndices> av::Renderer::QueueFamilyIndices::get_queue_family_indices(
 	vk::raii::PhysicalDevice const &physical_device,
 	vk::raii::SurfaceKHR const &surface
 ) {
@@ -61,7 +67,7 @@ std::optional<av::Presenter::QueueFamilyIndices> av::Presenter::QueueFamilyIndic
 	else return std::nullopt;
 }
 
-std::optional<av::Presenter::SurfaceInfo> av::Presenter::SurfaceInfo::get_surface_info(
+std::optional<av::Renderer::SurfaceInfo> av::Renderer::SurfaceInfo::get_surface_info(
 	vk::raii::PhysicalDevice const &physical_device,
 	vk::raii::SurfaceKHR const &surface,
 	vkfw::UniqueWindow const &window
@@ -71,7 +77,7 @@ std::optional<av::Presenter::SurfaceInfo> av::Presenter::SurfaceInfo::get_surfac
 	if (!surface_format.has_value()) return std::nullopt;
 	std::optional<vk::PresentModeKHR> present_mode = choose_present_mode(physical_device, surface);
 	if (!present_mode.has_value()) return std::nullopt;
-	return av::Presenter::SurfaceInfo{
+	return av::Renderer::SurfaceInfo{
 		.surface_capabilities = surface_capabilities,
 		.surface_format = *surface_format,
 		.present_mode = *present_mode,
@@ -79,7 +85,7 @@ std::optional<av::Presenter::SurfaceInfo> av::Presenter::SurfaceInfo::get_surfac
 	};
 }
 
-std::optional<vk::SurfaceFormatKHR> av::Presenter::SurfaceInfo::choose_surface_format(
+std::optional<vk::SurfaceFormatKHR> av::Renderer::SurfaceInfo::choose_surface_format(
 	vk::raii::PhysicalDevice const &physical_device,
 	vk::raii::SurfaceKHR const &surface
 ) {
@@ -93,7 +99,7 @@ std::optional<vk::SurfaceFormatKHR> av::Presenter::SurfaceInfo::choose_surface_f
 	return surface_formats.front(); // try different formats
 }
 
-std::optional<vk::PresentModeKHR> av::Presenter::SurfaceInfo::choose_present_mode(
+std::optional<vk::PresentModeKHR> av::Renderer::SurfaceInfo::choose_present_mode(
 	vk::raii::PhysicalDevice const &physical_device,
 	vk::raii::SurfaceKHR const &surface
 ) {
@@ -107,7 +113,7 @@ std::optional<vk::PresentModeKHR> av::Presenter::SurfaceInfo::choose_present_mod
 }
 
 // Window vs UniqueWindow ?
-vk::Extent2D av::Presenter::SurfaceInfo::get_extent(
+vk::Extent2D av::Renderer::SurfaceInfo::get_extent(
 	vk::SurfaceCapabilitiesKHR const &surface_capabilities,
 	vkfw::UniqueWindow const &window
 ) {
@@ -129,8 +135,8 @@ vk::Extent2D av::Presenter::SurfaceInfo::get_extent(
 }
 
 
-av::Presenter::Presenter(size_t width, size_t height, std::string const &title, bool const &floating,
-                         std::vector<Vertex> const &vertices)
+av::Renderer::Renderer(size_t width, size_t height, std::string const &title, bool const &floating,
+                       std::vector<Vertex> const &vertices)
 	: num_vertices{vertices.size()}
 
 	, vkfw_instance{vkfw::initUnique()}
@@ -186,25 +192,25 @@ av::Presenter::Presenter(size_t width, size_t height, std::string const &title, 
 	bind_vertex_buffer_memory();
 }
 
-av::Presenter::~Presenter() {
+av::Renderer::~Renderer() {
 	device.waitIdle(); // wait for Vulkan processes to finish
 	// the rest should auto-destruct because RAII
 }
 
-bool av::Presenter::is_running() const {
+bool av::Renderer::is_running() const {
 	return !window->shouldClose();
 }
 
 // upload vertices to the vertex buffer
 // todo this approach is probably not fast
 // todo try https://redd.it/aij7zp
-void av::Presenter::set_vertices(Vertex const *const vertices) const {
+void av::Renderer::set_vertices(Vertex const *const vertices) const {
 //	void *vertex_buffer_memory_data = vertex_buffer_memory.mapMemory(0, num_vertices * sizeof(Vertex), vk::MemoryMapFlags{});
 	memcpy(vertex_buffer_memory_data, vertices, num_vertices * sizeof(Vertex));
 //	vertex_buffer_memory.unmapMemory();
 }
 
-void av::Presenter::draw_frame() {
+void av::Renderer::draw_frame() {
 	vk::PipelineStageFlags image_available_semaphore_wait_stage = vk::PipelineStageFlagBits::eColorAttachmentOutput;
 	FrameSyncPrimitives const &frame_sync_primitives = frames_sync_primitives[current_flight_frame];
 	device.waitForFences({*frame_sync_primitives.frame_in_flight}, true, std::numeric_limits<uint64_t>::max());
@@ -247,7 +253,7 @@ void av::Presenter::draw_frame() {
 	if (current_flight_frame == MAX_FRAMES_IN_FLIGHT) current_flight_frame = 0;
 }
 
-av::Presenter::FrameSyncPrimitives::FrameSyncPrimitives(
+av::Renderer::FrameSyncPrimitives::FrameSyncPrimitives(
 	vk::raii::Device const &device,
 	vk::SemaphoreCreateInfo const &image_available_semaphore_create_info,
 	vk::SemaphoreCreateInfo const &render_finished_semaphore_create_info,
@@ -257,7 +263,7 @@ av::Presenter::FrameSyncPrimitives::FrameSyncPrimitives(
 	, frame_in_flight{device, in_flight_fence_create_info} {}
 
 
-vk::raii::Instance av::Presenter::create_instance(vk::raii::Context const &context) {
+vk::raii::Instance av::Renderer::create_instance(vk::raii::Context const &context) {
 	vk::ApplicationInfo application_info{
 		.pApplicationName = APPLICATION_NAME.c_str(),
 		.apiVersion = VK_API_VERSION_1_1,
@@ -273,7 +279,7 @@ vk::raii::Instance av::Presenter::create_instance(vk::raii::Context const &conte
 	return {context, instance_create_info};
 }
 
-bool av::Presenter::physical_device_is_compatible(
+bool av::Renderer::physical_device_is_compatible(
 	vk::raii::PhysicalDevice const &physical_device,
 	vk::raii::SurfaceKHR const &surface,
 	vkfw::UniqueWindow const &window
@@ -300,7 +306,7 @@ bool av::Presenter::physical_device_is_compatible(
 	return true;
 }
 
-vk::raii::PhysicalDevice av::Presenter::choose_physical_device(
+vk::raii::PhysicalDevice av::Renderer::choose_physical_device(
 	vk::raii::Instance const &instance, vk::raii::SurfaceKHR const &surface, vkfw::UniqueWindow const &window
 ) {
 	vk::raii::PhysicalDevices physical_devices(instance);
@@ -317,8 +323,8 @@ vk::raii::PhysicalDevice av::Presenter::choose_physical_device(
 	return std::move(physical_devices.front());
 }
 
-vk::raii::Device av::Presenter::create_device(vk::raii::PhysicalDevice const &physical_device,
-                                              av::Presenter::QueueFamilyIndices const &queue_family_indices) {
+vk::raii::Device av::Renderer::create_device(vk::raii::PhysicalDevice const &physical_device,
+                                             av::Renderer::QueueFamilyIndices const &queue_family_indices) {
 	std::vector<vk::DeviceQueueCreateInfo> device_queue_create_infos;
 	float queue_priority = 0.0f;
 	for (uint32_t queue_family_index : std::set<uint32_t>{queue_family_indices.graphics, queue_family_indices.present})
@@ -341,11 +347,11 @@ vk::raii::Device av::Presenter::create_device(vk::raii::PhysicalDevice const &ph
 	return {physical_device, device_create_info};
 }
 
-vk::raii::SwapchainKHR av::Presenter::create_swapchain(
+vk::raii::SwapchainKHR av::Renderer::create_swapchain(
 	vk::raii::Device const &device,
 	vk::raii::SurfaceKHR const &surface,
-	av::Presenter::QueueFamilyIndices const &queue_family_indices,
-	av::Presenter::SurfaceInfo const &surface_info,
+	av::Renderer::QueueFamilyIndices const &queue_family_indices,
+	av::Renderer::SurfaceInfo const &surface_info,
 	vk::raii::SwapchainKHR const &old_swapchain
 ) {
 	std::array queue_family_index_array = {
@@ -374,7 +380,7 @@ vk::raii::SwapchainKHR av::Presenter::create_swapchain(
 	return {device, swapchain_create_info};
 }
 
-vk::raii::PipelineLayout av::Presenter::create_pipeline_layout(vk::raii::Device const &device) {
+vk::raii::PipelineLayout av::Renderer::create_pipeline_layout(vk::raii::Device const &device) {
 	vk::PipelineLayoutCreateInfo pipeline_layout_create_info{
 		.setLayoutCount = 0,
 		.pushConstantRangeCount = 0,
@@ -383,7 +389,7 @@ vk::raii::PipelineLayout av::Presenter::create_pipeline_layout(vk::raii::Device 
 }
 
 vk::raii::RenderPass
-av::Presenter::create_render_pass(vk::raii::Device const &device, av::Presenter::SurfaceInfo const &surface_info) {
+av::Renderer::create_render_pass(vk::raii::Device const &device, av::Renderer::SurfaceInfo const &surface_info) {
 	vk::Format const &swapchain_format = surface_info.surface_format.format;
 	vk::AttachmentDescription attachment_description{
 		.format = swapchain_format,
@@ -423,21 +429,21 @@ av::Presenter::create_render_pass(vk::raii::Device const &device, av::Presenter:
 	return {device, render_pass_create_info};
 }
 
-vk::raii::Pipeline av::Presenter::create_pipeline(
+vk::raii::Pipeline av::Renderer::create_pipeline(
 	vk::raii::Device const &device,
-	av::Presenter::SurfaceInfo const &surface_info,
+	av::Renderer::SurfaceInfo const &surface_info,
 	vk::raii::PipelineLayout const &pipeline_layout,
 	vk::raii::RenderPass const &render_pass
 ) {
 	std::vector<char> vertex_shader_code = file_to_chars(VERTEX_SHADER_FILE_NAME);
-	vk::raii::ShaderModule vertex_shader_module = av::Presenter::create_shader_module(device, vertex_shader_code);
+	vk::raii::ShaderModule vertex_shader_module = av::Renderer::create_shader_module(device, vertex_shader_code);
 	vk::PipelineShaderStageCreateInfo vertex_shader_stage_create_info{
 		.stage = vk::ShaderStageFlagBits::eVertex,
 		.module = *vertex_shader_module,
 		.pName = "main",
 	};
 	std::vector<char> fragment_shader_code = file_to_chars(FRAGMENT_SHADER_FILE_NAME);
-	vk::raii::ShaderModule fragment_shader_module = av::Presenter::create_shader_module(device, fragment_shader_code);
+	vk::raii::ShaderModule fragment_shader_module = av::Renderer::create_shader_module(device, fragment_shader_code);
 	vk::PipelineShaderStageCreateInfo fragment_shader_stage_info{
 		.stage = vk::ShaderStageFlagBits::eFragment,
 		.module = *fragment_shader_module,
@@ -516,8 +522,8 @@ vk::raii::Pipeline av::Presenter::create_pipeline(
 }
 
 std::vector<vk::raii::ImageView>
-av::Presenter::create_image_views(vk::raii::Device const &device, vk::raii::SwapchainKHR const &swapchain,
-                                  vk::Format const &format) {
+av::Renderer::create_image_views(vk::raii::Device const &device, vk::raii::SwapchainKHR const &swapchain,
+                                 vk::Format const &format) {
 	std::vector<VkImage> images = swapchain.getImages();
 	std::vector<vk::raii::ImageView> image_views;
 	image_views.reserve(images.size());
@@ -545,7 +551,7 @@ av::Presenter::create_image_views(vk::raii::Device const &device, vk::raii::Swap
 	return image_views;
 }
 
-std::vector<vk::raii::Framebuffer> av::Presenter::create_framebuffers(
+std::vector<vk::raii::Framebuffer> av::Renderer::create_framebuffers(
 	vk::raii::Device const &device,
 	vk::raii::RenderPass const &render_pass,
 	std::vector<vk::raii::ImageView> const &image_views,
@@ -569,7 +575,7 @@ std::vector<vk::raii::Framebuffer> av::Presenter::create_framebuffers(
 }
 
 vk::raii::CommandPool
-av::Presenter::create_command_pool(vk::raii::Device const &device, uint32_t const &graphics_queue_family_index) {
+av::Renderer::create_command_pool(vk::raii::Device const &device, uint32_t const &graphics_queue_family_index) {
 	vk::CommandPoolCreateInfo command_pool_create_info{
 		.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
 		.queueFamilyIndex = graphics_queue_family_index,
@@ -577,8 +583,8 @@ av::Presenter::create_command_pool(vk::raii::Device const &device, uint32_t cons
 	return {device, command_pool_create_info};
 }
 
-vk::raii::CommandBuffers av::Presenter::allocate_command_buffers(vk::raii::Device const &device,
-                                                                 vk::raii::CommandPool const &graphics_command_pool) {
+vk::raii::CommandBuffers av::Renderer::allocate_command_buffers(vk::raii::Device const &device,
+                                                                vk::raii::CommandPool const &graphics_command_pool) {
 	vk::CommandBufferAllocateInfo command_buffer_allocate_info{
 		.commandPool = *graphics_command_pool,
 		.level = vk::CommandBufferLevel::ePrimary,
@@ -587,8 +593,8 @@ vk::raii::CommandBuffers av::Presenter::allocate_command_buffers(vk::raii::Devic
 	return {device, command_buffer_allocate_info};
 }
 
-std::vector<av::Presenter::FrameSyncPrimitives>
-av::Presenter::create_frame_sync_signalers(vk::raii::Device const &device) {
+std::vector<av::Renderer::FrameSyncPrimitives>
+av::Renderer::create_frame_sync_signalers(vk::raii::Device const &device) {
 	std::vector<FrameSyncPrimitives> frame_sync_signalers;
 	frame_sync_signalers.reserve(MAX_FRAMES_IN_FLIGHT);
 	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
@@ -601,7 +607,7 @@ av::Presenter::create_frame_sync_signalers(vk::raii::Device const &device) {
 }
 
 vk::raii::ShaderModule
-av::Presenter::create_shader_module(vk::raii::Device const &device, std::vector<char> const &code_chars) {
+av::Renderer::create_shader_module(vk::raii::Device const &device, std::vector<char> const &code_chars) {
 	vk::ShaderModuleCreateInfo shader_module_create_info{
 		.codeSize = code_chars.size(),
 		.pCode = reinterpret_cast<uint32_t const *>(code_chars.data()),
@@ -609,7 +615,7 @@ av::Presenter::create_shader_module(vk::raii::Device const &device, std::vector<
 	return {device, shader_module_create_info};
 }
 
-vk::raii::Buffer av::Presenter::create_vertex_buffer(vk::raii::Device const &device, size_t const &num_vertices) {
+vk::raii::Buffer av::Renderer::create_vertex_buffer(vk::raii::Device const &device, size_t const &num_vertices) {
 	std::cout << num_vertices << std::endl;
 	vk::BufferCreateInfo buffer_create_info{
 		.size = num_vertices * sizeof(Vertex),
@@ -632,7 +638,7 @@ std::optional<uint32_t> get_memory_type_index(
 	return std::nullopt;
 }
 
-vk::raii::DeviceMemory av::Presenter::allocate_vertex_buffer_memory(
+vk::raii::DeviceMemory av::Renderer::allocate_vertex_buffer_memory(
 	vk::raii::Device const &device,
 	vk::raii::Buffer const &vertex_buffer,
 	vk::raii::PhysicalDevice const &physical_device
@@ -657,11 +663,11 @@ vk::raii::DeviceMemory av::Presenter::allocate_vertex_buffer_memory(
 }
 
 
-void av::Presenter::bind_vertex_buffer_memory() const {
+void av::Renderer::bind_vertex_buffer_memory() const {
 	vertex_buffer.bindMemory(*vertex_buffer_memory, 0);
 }
 
-void av::Presenter::recreate_swapchain() {
+void av::Renderer::recreate_swapchain() {
 	for (;;) {
 		auto[width, height] = window->getFramebufferSize();
 		if (width && height) break;
@@ -681,7 +687,7 @@ void av::Presenter::recreate_swapchain() {
 }
 
 
-void av::Presenter::record_graphics_command_buffer(
+void av::Renderer::record_graphics_command_buffer(
 	vk::raii::CommandBuffer const &command_buffer,
 	vk::raii::Framebuffer const &framebuffer
 ) const {
@@ -710,7 +716,7 @@ void av::Presenter::record_graphics_command_buffer(
 	command_buffer.end();
 }
 
-std::vector<char> av::Presenter::file_to_chars(std::string const &file_name) {
+std::vector<char> av::Renderer::file_to_chars(std::string const &file_name) {
 	std::ifstream file(file_name, std::ios::binary | std::ios::ate);
 	if (!file.is_open())
 		throw std::ios::failure("failed to open file");

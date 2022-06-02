@@ -1,5 +1,5 @@
-#ifndef AUDIO_VISUALIZER_PRESENTER_H
-#define AUDIO_VISUALIZER_PRESENTER_H
+#ifndef AUDIO_VISUALIZER_RENDERER_H
+#define AUDIO_VISUALIZER_RENDERER_H
 
 #define VULKAN_HPP_NO_CONSTRUCTORS
 #define VULKAN_HPP_NO_SETTERS
@@ -10,7 +10,7 @@
 #include <optional>
 
 namespace av {
-	class Presenter {
+	class Renderer {
 	public:
 
 		struct Vertex {
@@ -20,18 +20,19 @@ namespace av {
 			struct Color {
 				float r, g, b;
 			} color;
+			float color_multiplier;
 		private:
-			friend class Presenter; // don't know if friending is the best way to structure things
+			friend class Renderer; // don't know if friending is the best way to structure things
 			static constexpr vk::VertexInputBindingDescription get_binding_description();
-			static constexpr std::array<vk::VertexInputAttributeDescription, 2> get_attribute_descriptions();
+			static constexpr std::array<vk::VertexInputAttributeDescription, 3> get_attribute_descriptions();
 		};
 
 
-		Presenter(size_t width, size_t height, std::string const &title, bool const &floating,
-		          std::vector<Vertex> const &vertices);
-//		Presenter(size_t const &num_vertices, bool const &floating, char const *title, size_t width = 320, size_t height = 240);
+		Renderer(size_t width, size_t height, std::string const &title, bool const &floating,
+		         std::vector<Vertex> const &vertices);
+//		Renderer(size_t const &num_vertices, bool const &floating, char const *title, size_t width = 320, size_t height = 240);
 
-		~Presenter();
+		~Renderer();
 
 		// todo rule of 3? rule of 5? https://en.cppreference.com/w/cpp/language/rule_of_three
 
@@ -155,24 +156,24 @@ namespace av {
 		);
 
 		static vk::raii::Device
-		create_device(vk::raii::PhysicalDevice const &, av::Presenter::QueueFamilyIndices const &);
+		create_device(vk::raii::PhysicalDevice const &, av::Renderer::QueueFamilyIndices const &);
 
 
 		static vk::raii::SwapchainKHR create_swapchain(
 			vk::raii::Device const &,
 			vk::raii::SurfaceKHR const &,
-			av::Presenter::QueueFamilyIndices const &,
-			av::Presenter::SurfaceInfo const &,
+			av::Renderer::QueueFamilyIndices const &,
+			av::Renderer::SurfaceInfo const &,
 			vk::raii::SwapchainKHR const &old_swapchain
 		);
 
 		static vk::raii::PipelineLayout create_pipeline_layout(vk::raii::Device const &);
 
-		static vk::raii::RenderPass create_render_pass(vk::raii::Device const &, av::Presenter::SurfaceInfo const &);
+		static vk::raii::RenderPass create_render_pass(vk::raii::Device const &, av::Renderer::SurfaceInfo const &);
 
 		static vk::raii::Pipeline create_pipeline(
 			vk::raii::Device const &,
-			av::Presenter::SurfaceInfo const &,
+			av::Renderer::SurfaceInfo const &,
 			vk::raii::PipelineLayout const &,
 			vk::raii::RenderPass const &
 		);
@@ -221,4 +222,4 @@ namespace av {
 	};
 }
 
-#endif //AUDIO_VISUALIZER_PRESENTER_H
+#endif //AUDIO_VISUALIZER_RENDERER_H
