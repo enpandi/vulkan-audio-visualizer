@@ -34,42 +34,148 @@ constexpr std::array<vk::VertexInputAttributeDescription, 2> av::Presenter::Vert
 	};
 }
 
-av::Presenter::Presenter(size_t const &num_vertices, bool const &floating, char const *title, size_t width, size_t height)
-	: num_vertices{num_vertices}
+std::optional<av::Presenter::QueueFamilyIndices> av::Presenter::QueueFamilyIndices::get_queue_family_indices(
+	vk::raii::PhysicalDevice const &physical_device,
+	vk::raii::SurfaceKHR const &surface
+) {
+	std::optional<uint32_t> graphics_queue_family_index, present_queue_family_index;
+	std::vector<vk::QueueFamilyProperties> queue_families_properties = physical_device.getQueueFamilyProperties();
+	for (uint32_t queue_family_index = 0; queue_family_index < queue_families_properties.size(); ++queue_family_index) {
+		bool supports_graphics = static_cast<bool>(queue_families_properties[queue_family_index].queueFlags &
+		                                           vk::QueueFlagBits::eGraphics);
+		bool supports_present = physical_device.getSurfaceSupportKHR(queue_family_index, *surface);
+		if (supports_graphics && supports_present) {
+			graphics_queue_family_index = present_queue_family_index = queue_family_index;
+			break;
+		}
+		if (supports_graphics && !graphics_queue_family_index.has_value())
+			graphics_queue_family_index = queue_family_index;
+		if (supports_present && !present_queue_family_index.has_value())
+			present_queue_family_index = queue_family_index;
+	}
+	if (graphics_queue_family_index.has_value() && present_queue_family_index.has_value())
+		return QueueFamilyIndices{
+			.graphics= *graphics_queue_family_index,
+			.present = *present_queue_family_index,
+		};
+	else return std::nullopt;
+}
+
+std::optional<av::Presenter::SurfaceInfo> av::Presenter::SurfaceInfo::get_surface_info(
+	vk::raii::PhysicalDevice const &physical_device,
+	vk::raii::SurfaceKHR const &surface,
+	vkfw::UniqueWindow const &window
+) {
+	vk::SurfaceCapabilitiesKHR surface_capabilities = physical_device.getSurfaceCapabilitiesKHR(*surface);
+	std::optional<vk::SurfaceFormatKHR> surface_format = choose_surface_format(physical_device, surface);
+	if (!surface_format.has_value()) return std::nullopt;
+	std::optional<vk::PresentModeKHR> present_mode = choose_present_mode(physical_device, surface);
+	if (!present_mode.has_value()) return std::nullopt;
+	return av::Presenter::SurfaceInfo{
+		.surface_capabilities = surface_capabilities,
+		.surface_format = *surface_format,
+		.present_mode = *present_mode,
+		.extent = get_extent(surface_capabilities, window),
+	};
+}
+
+std::optional<vk::SurfaceFormatKHR> av::Presenter::SurfaceInfo::choose_surface_format(
+	vk::raii::PhysicalDevice const &physical_device,
+	vk::raii::SurfaceKHR const &surface
+) {
+	std::vector<vk::SurfaceFormatKHR> surface_formats = physical_device.getSurfaceFormatsKHR(*surface);
+	if (surface_formats.empty())
+		return std::nullopt;
+	for (vk::SurfaceFormatKHR const &surface_format : surface_formats)
+		if (surface_format.format == vk::Format::eB8G8R8A8Srgb
+		    && surface_format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear)
+			return surface_format;
+	return surface_formats.front(); // try different formats
+}
+
+std::optional<vk::PresentModeKHR> av::Presenter::SurfaceInfo::choose_present_mode(
+	vk::raii::PhysicalDevice const &physical_device,
+	vk::raii::SurfaceKHR const &surface
+) {
+	std::vector<vk::PresentModeKHR> present_modes = physical_device.getSurfacePresentModesKHR(*surface);
+	if (present_modes.empty())
+		return std::nullopt;
+	for (vk::PresentModeKHR const &present_mode : present_modes)
+		if (present_mode == vk::PresentModeKHR::eMailbox)
+			return present_mode;
+	return vk::PresentModeKHR::eFifo; // try different modes
+}
+
+// Window vs UniqueWindow ?
+vk::Extent2D av::Presenter::SurfaceInfo::get_extent(
+	vk::SurfaceCapabilitiesKHR const &surface_capabilities,
+	vkfw::UniqueWindow const &window
+) {
+	if (surface_capabilities.currentExtent == vk::Extent2D{
+		.width = 0xFFFFFFFF,
+		.height = 0xFFFFFFFF,
+		// https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkSurfaceCapabilitiesKHR.html
+		// currentExtent is the current width and height of the surface, or the special value (0xFFFFFFFF, 0xFFFFFFFF)
+		// indicating that the surface size will be determined by the extent of a swapchain targeting the surface.
+	})
+		return surface_capabilities.currentExtent;
+	auto[width, height] = window->getFramebufferSize();
+	return {
+		.width = std::clamp<uint32_t>(width, surface_capabilities.minImageExtent.width,
+		                              surface_capabilities.maxImageExtent.width),
+		.height = std::clamp<uint32_t>(height, surface_capabilities.minImageExtent.height,
+		                               surface_capabilities.maxImageExtent.height),
+	};
+}
+
+
+av::Presenter::Presenter(size_t width, size_t height, std::string const &title, bool const &floating,
+                         std::vector<Vertex> const &vertices)
+	: num_vertices{vertices.size()}
+
 	, vkfw_instance{vkfw::initUnique()}
-	, window{vkfw::createWindowUnique(width, height, title, {.floating = floating})}
+	, window{vkfw::createWindowUnique(width, height, title.c_str(), {.floating = floating})}
+
 	, instance{create_instance(
 		context)}
 	, surface{instance, vkfw::createWindowSurface(*instance, *window)}
 	, physical_device{choose_physical_device(
-		instance, surface)}
-	, swapchain_info{physical_device, surface, window}
+		instance, surface, window)}
+	, queue_family_indices{*QueueFamilyIndices::get_queue_family_indices(
+		physical_device, surface)}
 	, device{create_device(
-		physical_device, swapchain_info)}
+		physical_device, queue_family_indices)}
+
+	, surface_info{*SurfaceInfo::get_surface_info(
+		physical_device, surface, window)}
 	, swapchain{create_swapchain(
-		device, surface, swapchain_info, nullptr)}
+		device, surface, queue_family_indices, surface_info, nullptr)}
 	, pipeline_layout{create_pipeline_layout(
 		device)}
 	, render_pass{create_render_pass(
-		device, swapchain_info)}
+		device, surface_info)}
 	, pipeline{create_pipeline(
-		device, swapchain_info, pipeline_layout, render_pass)}
+		device, surface_info, pipeline_layout, render_pass)}
 	, image_views{create_image_views(
-		device, swapchain, swapchain_info)}
+		device, swapchain, surface_info.surface_format.format)}
 	, framebuffers{create_framebuffers(
-		device, render_pass, image_views, swapchain_info)}
+		device, render_pass, image_views, surface_info.extent)}
+
 	, graphics_command_pool{create_command_pool(
-		device, swapchain_info)}
+		device, queue_family_indices.graphics)}
 	, graphics_command_buffers{allocate_command_buffers(
 		device, graphics_command_pool)}
-	, graphics_queue{device, swapchain_info.get_graphics_queue_family_index(), 0}
-	, present_queue{device, swapchain_info.get_present_queue_family_index(), 0}
+	, graphics_queue{device, queue_family_indices.graphics, 0}
+	, present_queue{device, queue_family_indices.present, 0}
 	, frames_sync_primitives{create_frame_sync_signalers(
 		device)}
 	, vertex_buffer{create_vertex_buffer(
 		device, num_vertices)}
 	, vertex_buffer_memory{allocate_vertex_buffer_memory(
-		device, vertex_buffer, physical_device)} {
+		device, vertex_buffer, physical_device)}
+	, vertex_buffer_memory_data{
+		vertex_buffer_memory.mapMemory(0, num_vertices * sizeof(Vertex), vk::MemoryMapFlags{})
+	} {
 	vkfw::setErrorCallback(
 		[](int error_code, char const *const description) {
 			std::cerr << "glfw error callback: error code " << error_code << ", " << description << std::endl;
@@ -81,8 +187,8 @@ av::Presenter::Presenter(size_t const &num_vertices, bool const &floating, char 
 }
 
 av::Presenter::~Presenter() {
-	device.waitIdle(); // wait for vulkan processes to finish
-	// the rest should auto-destruct
+	device.waitIdle(); // wait for Vulkan processes to finish
+	// the rest should auto-destruct because RAII
 }
 
 bool av::Presenter::is_running() const {
@@ -93,9 +199,9 @@ bool av::Presenter::is_running() const {
 // todo this approach is probably not fast
 // todo try https://redd.it/aij7zp
 void av::Presenter::set_vertices(Vertex const *const vertices) const {
-	void *data = vertex_buffer_memory.mapMemory(0, num_vertices * sizeof(Vertex), vk::MemoryMapFlags{});
-	memcpy(data, vertices, num_vertices * sizeof(Vertex));
-	vertex_buffer_memory.unmapMemory();
+//	void *vertex_buffer_memory_data = vertex_buffer_memory.mapMemory(0, num_vertices * sizeof(Vertex), vk::MemoryMapFlags{});
+	memcpy(vertex_buffer_memory_data, vertices, num_vertices * sizeof(Vertex));
+//	vertex_buffer_memory.unmapMemory();
 }
 
 void av::Presenter::draw_frame() {
@@ -104,10 +210,8 @@ void av::Presenter::draw_frame() {
 	device.waitForFences({*frame_sync_primitives.frame_in_flight}, true, std::numeric_limits<uint64_t>::max());
 	uint32_t image_index;
 	try {
-		image_index = swapchain.acquireNextImage(
-			std::numeric_limits<uint64_t>::max(),
-			*frame_sync_primitives.draw_complete,
-			nullptr).second;
+		image_index = swapchain.acquireNextImage(std::numeric_limits<uint64_t>::max(),
+		                                         *frame_sync_primitives.draw_complete, nullptr).second;
 	} catch (vk::OutOfDateKHRError const &e) {
 		recreate_swapchain();
 		return;
@@ -143,151 +247,6 @@ void av::Presenter::draw_frame() {
 	if (current_flight_frame == MAX_FRAMES_IN_FLIGHT) current_flight_frame = 0;
 }
 
-av::Presenter::QueueFamilyIndices::QueueFamilyIndices(vk::raii::PhysicalDevice const &physical_device, vk::raii::SurfaceKHR const &surface) {
-	std::vector<vk::QueueFamilyProperties> queue_families_properties = physical_device.getQueueFamilyProperties();
-	for (uint32_t queue_family_index = 0; queue_family_index < queue_families_properties.size(); ++queue_family_index) {
-		bool supports_graphics = static_cast<bool>(queue_families_properties[queue_family_index].queueFlags & vk::QueueFlagBits::eGraphics);
-		bool supports_present = physical_device.getSurfaceSupportKHR(queue_family_index, *surface);
-		if (supports_graphics && supports_present) {
-			graphics_queue_family_index = present_queue_family_index = queue_family_index;
-			break;
-		}
-		if (supports_graphics && !graphics_queue_family_index.has_value())
-			graphics_queue_family_index = queue_family_index;
-		if (supports_present && !present_queue_family_index.has_value())
-			present_queue_family_index = queue_family_index;
-	}
-}
-
-[[nodiscard]] bool av::Presenter::QueueFamilyIndices::is_compatible() const {
-	return graphics_queue_family_index.has_value() && present_queue_family_index.has_value();
-}
-
-// prefer value() over operator* because std::bad_optional_access seems like a useful thing to throw
-
-[[nodiscard]] uint32_t const &av::Presenter::QueueFamilyIndices::get_graphics_queue_family_index() const {
-	return graphics_queue_family_index.value();
-}
-
-[[nodiscard]] uint32_t const &av::Presenter::QueueFamilyIndices::get_present_queue_family_index() const {
-	return present_queue_family_index.value();
-}
-
-// delegating constructor https://stackoverflow.com/a/61033668
-av::Presenter::SwapchainInfo::SwapchainInfo(
-	vk::raii::PhysicalDevice const &physical_device,
-	vk::raii::SurfaceKHR const &surface,
-	vkfw::UniqueWindow const &window
-) : SwapchainInfo(
-	check_supports_all_extensions(physical_device),
-	QueueFamilyIndices(physical_device, surface),
-	physical_device.getSurfaceCapabilitiesKHR(*surface),
-	choose_surface_format(physical_device, surface),
-	choose_present_mode(physical_device, surface),
-	window
-) {}
-
-[[nodiscard]] bool av::Presenter::SwapchainInfo::is_compatible() const {
-	return supports_all_required_extensions
-	       && graphics_queue_family_index.has_value()
-	       && present_queue_family_index.has_value()
-	       && surface_format.has_value()
-	       && present_mode.has_value();
-}
-
-// prefer value() over operator* because std::bad_optional_access seems like a useful thing to throw
-
-[[nodiscard]] uint32_t const &av::Presenter::SwapchainInfo::get_graphics_queue_family_index() const {
-	return graphics_queue_family_index.value();
-}
-
-[[nodiscard]] uint32_t const &av::Presenter::SwapchainInfo::get_present_queue_family_index() const {
-	return present_queue_family_index.value();
-}
-
-[[nodiscard]] vk::SurfaceCapabilitiesKHR const &av::Presenter::SwapchainInfo::get_surface_capabilities() const {
-	return surface_capabilities;
-}
-
-[[nodiscard]] vk::SurfaceFormatKHR const &av::Presenter::SwapchainInfo::get_surface_format() const {
-	return surface_format.value();
-}
-
-[[nodiscard]] vk::PresentModeKHR const &av::Presenter::SwapchainInfo::get_present_mode() const {
-	return present_mode.value();
-}
-
-// Window vs UniqueWindow ?
-[[nodiscard]] vk::Extent2D av::Presenter::SwapchainInfo::get_extent() const {
-	if (surface_capabilities.currentExtent == vk::Extent2D{
-		.width = 0xFFFFFFFF,
-		.height = 0xFFFFFFFF,
-		// https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkSurfaceCapabilitiesKHR.html
-		// currentExtent is the current width and height of the surface, or the special value (0xFFFFFFFF, 0xFFFFFFFF)
-		// indicating that the surface size will be determined by the extent of a swapchain targeting the surface.
-	})
-		return surface_capabilities.currentExtent;
-	auto[width, height] = window->getFramebufferSize();
-	return {
-		.width = std::clamp<uint32_t>(width, surface_capabilities.minImageExtent.width, surface_capabilities.maxImageExtent.width),
-		.height = std::clamp<uint32_t>(height, surface_capabilities.minImageExtent.height, surface_capabilities.maxImageExtent.height),
-	};
-}
-
-bool av::Presenter::SwapchainInfo::check_supports_all_extensions(vk::raii::PhysicalDevice const &physical_device) {
-	std::vector<vk::ExtensionProperties> extensions_properties = physical_device.enumerateDeviceExtensionProperties();
-	return std::ranges::all_of(
-		DEVICE_EXTENSIONS,
-		[&](std::string const &device_extension) {
-			return std::ranges::any_of(
-				extensions_properties,
-				[&](vk::ExtensionProperties const &extension_properties) {
-					return device_extension == extension_properties.extensionName;
-				});
-//					extensions_properties | std::views::transform(&vk::ExtensionProperties::extensionName),
-//					std::bind(std::equal_to<std::string>(), device_extension, std::placeholders::_1));
-		});
-}
-
-std::optional<vk::SurfaceFormatKHR>
-av::Presenter::SwapchainInfo::choose_surface_format(vk::raii::PhysicalDevice const &physical_device, vk::raii::SurfaceKHR const &surface) {
-	std::vector<vk::SurfaceFormatKHR> surface_formats = physical_device.getSurfaceFormatsKHR(*surface);
-	if (surface_formats.empty())
-		return std::nullopt;
-	for (vk::SurfaceFormatKHR const &surface_format : surface_formats)
-		if (surface_format.format == vk::Format::eB8G8R8A8Srgb
-		    && surface_format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear)
-			return surface_format;
-	return surface_formats.front(); // try different formats
-}
-
-std::optional<vk::PresentModeKHR>
-av::Presenter::SwapchainInfo::choose_present_mode(vk::raii::PhysicalDevice const &physical_device, vk::raii::SurfaceKHR const &surface) {
-	std::vector<vk::PresentModeKHR> present_modes = physical_device.getSurfacePresentModesKHR(*surface);
-	if (present_modes.empty())
-		return std::nullopt;
-	for (vk::PresentModeKHR const &present_mode : present_modes)
-		if (present_mode == vk::PresentModeKHR::eMailbox)
-			return present_mode;
-	return vk::PresentModeKHR::eFifo; // try different modes
-}
-
-av::Presenter::SwapchainInfo::SwapchainInfo(
-	bool const &supports_all_extensions,
-	QueueFamilyIndices const &queue_family_indices,
-	vk::SurfaceCapabilitiesKHR const &surface_capabilities,
-	std::optional<vk::SurfaceFormatKHR> const &surface_format,
-	std::optional<vk::PresentModeKHR> const &present_mode,
-	vkfw::UniqueWindow const &window
-) : supports_all_required_extensions{supports_all_extensions}
-	, graphics_queue_family_index{queue_family_indices.get_graphics_queue_family_index()}
-	, present_queue_family_index{queue_family_indices.get_present_queue_family_index()}
-	, surface_capabilities{surface_capabilities}
-	, surface_format{surface_format}
-	, present_mode{present_mode}
-	, window{window} {}
-
-
 av::Presenter::FrameSyncPrimitives::FrameSyncPrimitives(
 	vk::raii::Device const &device,
 	vk::SemaphoreCreateInfo const &image_available_semaphore_create_info,
@@ -314,18 +273,41 @@ vk::raii::Instance av::Presenter::create_instance(vk::raii::Context const &conte
 	return {context, instance_create_info};
 }
 
-vk::raii::PhysicalDevice av::Presenter::choose_physical_device(vk::raii::Instance const &instance, vk::raii::SurfaceKHR const &surface) {
+bool av::Presenter::physical_device_is_compatible(
+	vk::raii::PhysicalDevice const &physical_device,
+	vk::raii::SurfaceKHR const &surface,
+	vkfw::UniqueWindow const &window
+) {
+	{
+		std::vector<vk::ExtensionProperties> extensions_properties = physical_device.enumerateDeviceExtensionProperties();
+		bool supports_all_extensions = std::ranges::all_of(
+			DEVICE_EXTENSIONS,
+			[&](std::string const &device_extension) {
+				return std::ranges::any_of(
+					extensions_properties,
+					[&](vk::ExtensionProperties const &extension_properties) {
+						return device_extension == extension_properties.extensionName;
+					});
+//					extensions_properties | std::views::transform(&vk::ExtensionProperties::extensionName),
+//					std::bind(std::equal_to<std::string>(), device_extension, std::placeholders::_1));
+			});
+		if (!supports_all_extensions) return false;
+	}
+	if (!QueueFamilyIndices::get_queue_family_indices(physical_device, surface).has_value())
+		return false;
+	if (!SurfaceInfo::get_surface_info(physical_device, surface, window).has_value())
+		return false;
+	return true;
+}
+
+vk::raii::PhysicalDevice av::Presenter::choose_physical_device(
+	vk::raii::Instance const &instance, vk::raii::SurfaceKHR const &surface, vkfw::UniqueWindow const &window
+) {
 	vk::raii::PhysicalDevices physical_devices(instance);
-	std::vector<av::Presenter::QueueFamilyIndices> queue_families_indices;
-	queue_families_indices.reserve(physical_devices.size());
-	std::transform(physical_devices.begin(), physical_devices.end(), std::back_inserter(queue_families_indices),
-	               [&](vk::raii::PhysicalDevice const &physical_device) {
-		               return av::Presenter::QueueFamilyIndices(physical_device, surface);
-	               });
 	auto usable_physical_device_indices = std::views::iota(0u, physical_devices.size())
 	                                      | std::views::filter(
 		[&](uint32_t const &physical_device_index) {
-			return queue_families_indices[physical_device_index].is_compatible();
+			return physical_device_is_compatible(physical_devices[physical_device_index], surface, window);
 		});
 	if (!usable_physical_device_indices)
 		throw std::runtime_error("vulkan failed to find usable physical devices.");
@@ -335,10 +317,11 @@ vk::raii::PhysicalDevice av::Presenter::choose_physical_device(vk::raii::Instanc
 	return std::move(physical_devices.front());
 }
 
-vk::raii::Device av::Presenter::create_device(vk::raii::PhysicalDevice const &physical_device, av::Presenter::SwapchainInfo const &swapchain_info) {
+vk::raii::Device av::Presenter::create_device(vk::raii::PhysicalDevice const &physical_device,
+                                              av::Presenter::QueueFamilyIndices const &queue_family_indices) {
 	std::vector<vk::DeviceQueueCreateInfo> device_queue_create_infos;
 	float queue_priority = 0.0f;
-	for (uint32_t queue_family_index : std::set<uint32_t>{swapchain_info.get_graphics_queue_family_index(), swapchain_info.get_present_queue_family_index()})
+	for (uint32_t queue_family_index : std::set<uint32_t>{queue_family_indices.graphics, queue_family_indices.present})
 		device_queue_create_infos.push_back(
 			{
 				.queueFamilyIndex = queue_family_index,
@@ -361,32 +344,30 @@ vk::raii::Device av::Presenter::create_device(vk::raii::PhysicalDevice const &ph
 vk::raii::SwapchainKHR av::Presenter::create_swapchain(
 	vk::raii::Device const &device,
 	vk::raii::SurfaceKHR const &surface,
-	av::Presenter::SwapchainInfo const &swapchain_info,
+	av::Presenter::QueueFamilyIndices const &queue_family_indices,
+	av::Presenter::SurfaceInfo const &surface_info,
 	vk::raii::SwapchainKHR const &old_swapchain
 ) {
-	uint32_t const &graphics_queue_family_index = swapchain_info.get_graphics_queue_family_index();
-	uint32_t const &present_queue_family_index = swapchain_info.get_present_queue_family_index();
-	vk::SurfaceCapabilitiesKHR const &surface_capabilities = swapchain_info.get_surface_capabilities();
-	vk::PresentModeKHR const &present_mode = swapchain_info.get_present_mode();
 	std::array queue_family_index_array = {
-		swapchain_info.get_graphics_queue_family_index(),
-		swapchain_info.get_present_queue_family_index()
+		queue_family_indices.graphics,
+		queue_family_indices.present,
 	};
 	vk::SwapchainCreateInfoKHR swapchain_create_info{
 		.surface = *surface,
-		.minImageCount = surface_capabilities.maxImageCount == 0
-		                 ? surface_capabilities.minImageCount + 1
-		                 : std::min(surface_capabilities.minImageCount + 1, surface_capabilities.maxImageCount),
-		.imageFormat = swapchain_info.get_surface_format().format,
-		.imageColorSpace = swapchain_info.get_surface_format().colorSpace,
-		.imageExtent = swapchain_info.get_extent(),
+		.minImageCount = surface_info.surface_capabilities.maxImageCount == 0
+		                 ? surface_info.surface_capabilities.minImageCount + 1
+		                 : std::min(surface_info.surface_capabilities.minImageCount + 1,
+		                            surface_info.surface_capabilities.maxImageCount),
+		.imageFormat = surface_info.surface_format.format,
+		.imageColorSpace = surface_info.surface_format.colorSpace,
+		.imageExtent = surface_info.extent,
 		.imageArrayLayers = 1,
 		.imageUsage = vk::ImageUsageFlagBits::eColorAttachment,
-		.imageSharingMode = graphics_queue_family_index == present_queue_family_index ?
+		.imageSharingMode = queue_family_indices.graphics == queue_family_indices.present ?
 		                    vk::SharingMode::eExclusive : vk::SharingMode::eConcurrent,
 		.queueFamilyIndexCount = queue_family_index_array.size(),
 		.pQueueFamilyIndices = queue_family_index_array.data(),
-		.presentMode = present_mode,
+		.presentMode = surface_info.present_mode,
 		.clipped = true,
 		.oldSwapchain = *old_swapchain,
 	};
@@ -401,8 +382,9 @@ vk::raii::PipelineLayout av::Presenter::create_pipeline_layout(vk::raii::Device 
 	return {device, pipeline_layout_create_info};
 }
 
-vk::raii::RenderPass av::Presenter::create_render_pass(vk::raii::Device const &device, av::Presenter::SwapchainInfo const &swapchain_info) {
-	vk::Format const &swapchain_format = swapchain_info.get_surface_format().format;
+vk::raii::RenderPass
+av::Presenter::create_render_pass(vk::raii::Device const &device, av::Presenter::SurfaceInfo const &surface_info) {
+	vk::Format const &swapchain_format = surface_info.surface_format.format;
 	vk::AttachmentDescription attachment_description{
 		.format = swapchain_format,
 		.samples = vk::SampleCountFlagBits::e1,
@@ -443,7 +425,7 @@ vk::raii::RenderPass av::Presenter::create_render_pass(vk::raii::Device const &d
 
 vk::raii::Pipeline av::Presenter::create_pipeline(
 	vk::raii::Device const &device,
-	av::Presenter::SwapchainInfo const &swapchain_info,
+	av::Presenter::SurfaceInfo const &surface_info,
 	vk::raii::PipelineLayout const &pipeline_layout,
 	vk::raii::RenderPass const &render_pass
 ) {
@@ -474,7 +456,7 @@ vk::raii::Pipeline av::Presenter::create_pipeline(
 		.topology = vk::PrimitiveTopology::eTriangleStrip,
 		.primitiveRestartEnable = false,
 	};
-	vk::Extent2D const &swapchain_extent = swapchain_info.get_extent();
+	vk::Extent2D const &swapchain_extent = surface_info.extent;
 	vk::Viewport viewport{
 		.x = 0.0f,
 		.y = 0.0f,
@@ -508,7 +490,8 @@ vk::raii::Pipeline av::Presenter::create_pipeline(
 	};
 	vk::PipelineColorBlendAttachmentState pipeline_color_blend_attachment_state{
 		.blendEnable = false,
-		.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA,
+		.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
+		                  vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA,
 	};
 	vk::PipelineColorBlendStateCreateInfo pipeline_color_blend_state_create_info{
 		.attachmentCount = 1,
@@ -533,21 +516,21 @@ vk::raii::Pipeline av::Presenter::create_pipeline(
 }
 
 std::vector<vk::raii::ImageView>
-av::Presenter::create_image_views(vk::raii::Device const &device, vk::raii::SwapchainKHR const &swapchain, av::Presenter::SwapchainInfo const &swapchain_info) {
+av::Presenter::create_image_views(vk::raii::Device const &device, vk::raii::SwapchainKHR const &swapchain,
+                                  vk::Format const &format) {
 	std::vector<VkImage> images = swapchain.getImages();
-	vk::Format const &swapchain_format = swapchain_info.get_surface_format().format;
 	std::vector<vk::raii::ImageView> image_views;
 	image_views.reserve(images.size());
 	for (VkImage const &image : images) {
 		vk::ImageViewCreateInfo image_view_create_info{
 			.image = image,
 			.viewType = vk::ImageViewType::e2D,
-			.format = swapchain_format,
+			.format = format,
 			.components{
-				.r = vk::ComponentSwizzle::eIdentity,
-				.g = vk::ComponentSwizzle::eIdentity,
-				.b = vk::ComponentSwizzle::eIdentity,
-				.a = vk::ComponentSwizzle::eIdentity,
+//				.r = vk::ComponentSwizzle::eIdentity,
+//				.g = vk::ComponentSwizzle::eIdentity,
+//				.b = vk::ComponentSwizzle::eIdentity,
+//				.a = vk::ComponentSwizzle::eIdentity,
 			},
 			.subresourceRange{
 				.aspectMask = vk::ImageAspectFlagBits::eColor,
@@ -566,9 +549,8 @@ std::vector<vk::raii::Framebuffer> av::Presenter::create_framebuffers(
 	vk::raii::Device const &device,
 	vk::raii::RenderPass const &render_pass,
 	std::vector<vk::raii::ImageView> const &image_views,
-	av::Presenter::SwapchainInfo const &swapchain_info
+	vk::Extent2D const &extent
 ) {
-	vk::Extent2D const &swapchain_extent = swapchain_info.get_extent();
 	std::vector<vk::raii::Framebuffer> framebuffers;
 	framebuffers.reserve(image_views.size());
 	for (vk::raii::ImageView const &image_view : image_views) {
@@ -577,8 +559,8 @@ std::vector<vk::raii::Framebuffer> av::Presenter::create_framebuffers(
 			.renderPass = *render_pass,
 			.attachmentCount = attachments.size(),
 			.pAttachments = attachments.data(),
-			.width = swapchain_extent.width,
-			.height = swapchain_extent.height,
+			.width = extent.width,
+			.height = extent.height,
 			.layers = 1,
 		};
 		framebuffers.emplace_back(device, framebuffer_create_info);
@@ -586,8 +568,8 @@ std::vector<vk::raii::Framebuffer> av::Presenter::create_framebuffers(
 	return framebuffers;
 }
 
-vk::raii::CommandPool av::Presenter::create_command_pool(vk::raii::Device const &device, av::Presenter::SwapchainInfo const &swapchain_info) {
-	uint32_t const &graphics_queue_family_index = swapchain_info.get_graphics_queue_family_index();
+vk::raii::CommandPool
+av::Presenter::create_command_pool(vk::raii::Device const &device, uint32_t const &graphics_queue_family_index) {
 	vk::CommandPoolCreateInfo command_pool_create_info{
 		.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
 		.queueFamilyIndex = graphics_queue_family_index,
@@ -595,7 +577,8 @@ vk::raii::CommandPool av::Presenter::create_command_pool(vk::raii::Device const 
 	return {device, command_pool_create_info};
 }
 
-vk::raii::CommandBuffers av::Presenter::allocate_command_buffers(vk::raii::Device const &device, vk::raii::CommandPool const &graphics_command_pool) {
+vk::raii::CommandBuffers av::Presenter::allocate_command_buffers(vk::raii::Device const &device,
+                                                                 vk::raii::CommandPool const &graphics_command_pool) {
 	vk::CommandBufferAllocateInfo command_buffer_allocate_info{
 		.commandPool = *graphics_command_pool,
 		.level = vk::CommandBufferLevel::ePrimary,
@@ -604,7 +587,8 @@ vk::raii::CommandBuffers av::Presenter::allocate_command_buffers(vk::raii::Devic
 	return {device, command_buffer_allocate_info};
 }
 
-std::vector<av::Presenter::FrameSyncPrimitives> av::Presenter::create_frame_sync_signalers(vk::raii::Device const &device) {
+std::vector<av::Presenter::FrameSyncPrimitives>
+av::Presenter::create_frame_sync_signalers(vk::raii::Device const &device) {
 	std::vector<FrameSyncPrimitives> frame_sync_signalers;
 	frame_sync_signalers.reserve(MAX_FRAMES_IN_FLIGHT);
 	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
@@ -616,7 +600,8 @@ std::vector<av::Presenter::FrameSyncPrimitives> av::Presenter::create_frame_sync
 	return frame_sync_signalers;
 }
 
-vk::raii::ShaderModule av::Presenter::create_shader_module(vk::raii::Device const &device, std::vector<char> const &code_chars) {
+vk::raii::ShaderModule
+av::Presenter::create_shader_module(vk::raii::Device const &device, std::vector<char> const &code_chars) {
 	vk::ShaderModuleCreateInfo shader_module_create_info{
 		.codeSize = code_chars.size(),
 		.pCode = reinterpret_cast<uint32_t const *>(code_chars.data()),
@@ -639,7 +624,6 @@ std::optional<uint32_t> get_memory_type_index(
 	uint32_t memory_type_bits,
 	vk::MemoryPropertyFlags memory_property_flags
 ) {
-	vk::MemoryType x;
 	vk::PhysicalDeviceMemoryProperties memory_properties = physical_device.getMemoryProperties();
 	for (uint32_t memory_type_index = 0; memory_type_index < memory_properties.memoryTypeCount; ++memory_type_index)
 		if ((memory_type_bits & (1 << memory_type_index))
@@ -678,7 +662,6 @@ void av::Presenter::bind_vertex_buffer_memory() const {
 }
 
 void av::Presenter::recreate_swapchain() {
-	// todo known issue: in release mode, this doesn't work (presumably because i'm not setting the old swapchain)
 	for (;;) {
 		auto[width, height] = window->getFramebufferSize();
 		if (width && height) break;
@@ -687,13 +670,13 @@ void av::Presenter::recreate_swapchain() {
 	}
 	device.waitIdle();
 	// placement new https://stackoverflow.com/a/54645552
-	swapchain_info.~SwapchainInfo();
-	new(&swapchain_info) SwapchainInfo(physical_device, surface, window);
-	swapchain = create_swapchain(device, surface, swapchain_info, swapchain);
-	render_pass = create_render_pass(device, swapchain_info);
-	pipeline = create_pipeline(device, swapchain_info, pipeline_layout, render_pass);
-	image_views = create_image_views(device, swapchain, swapchain_info);
-	framebuffers = create_framebuffers(device, render_pass, image_views, swapchain_info);
+	surface_info.~SurfaceInfo();
+	new(&surface_info) SurfaceInfo{*SurfaceInfo::get_surface_info(physical_device, surface, window)};
+	swapchain = create_swapchain(device, surface, queue_family_indices, surface_info, swapchain);
+	render_pass = create_render_pass(device, surface_info);
+	pipeline = create_pipeline(device, surface_info, pipeline_layout, render_pass);
+	image_views = create_image_views(device, swapchain, surface_info.surface_format.format);
+	framebuffers = create_framebuffers(device, render_pass, image_views, surface_info.extent);
 	framebuffer_resized = false;
 }
 
@@ -702,26 +685,28 @@ void av::Presenter::record_graphics_command_buffer(
 	vk::raii::CommandBuffer const &command_buffer,
 	vk::raii::Framebuffer const &framebuffer
 ) const {
-	vk::Extent2D const &swapchain_extent = swapchain_info.get_extent();
 	command_buffer.reset({});
-	vk::CommandBufferBeginInfo command_buffer_begin_info{};
-	command_buffer.begin(command_buffer_begin_info);
-	vk::ClearValue clear_value{.color{.float32 = std::array{0.0f, 0.0f, 0.0f, 1.0f}}};
-	vk::RenderPassBeginInfo render_pass_begin_info{
-		.renderPass = *render_pass,
-		.framebuffer = *framebuffer,
-		.renderArea{
-			.offset{.x=0, .y=0},
-			.extent = swapchain_extent,
-		},
-		.clearValueCount = 1,
-		.pClearValues = &clear_value,
-	};
-	command_buffer.beginRenderPass(render_pass_begin_info, vk::SubpassContents::eInline);
-	command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipeline);
-	command_buffer.bindVertexBuffers(0, {*vertex_buffer}, {0});
-	command_buffer.draw(num_vertices, 1, 0, 0);
-	command_buffer.endRenderPass();
+	command_buffer.begin({});
+	{
+		vk::ClearValue clear_value{.color{.float32 = std::array{0.0f, 0.0f, 0.0f, 1.0f}}};
+		vk::RenderPassBeginInfo render_pass_begin_info{
+			.renderPass = *render_pass,
+			.framebuffer = *framebuffer,
+			.renderArea{
+				.offset{.x=0, .y=0},
+				.extent = surface_info.extent,
+			},
+			.clearValueCount = 1,
+			.pClearValues = &clear_value,
+		};
+		command_buffer.beginRenderPass(render_pass_begin_info, vk::SubpassContents::eInline);
+		{
+			command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipeline);
+			command_buffer.bindVertexBuffers(0, {*vertex_buffer}, {0});
+			command_buffer.draw(num_vertices, 1, 0, 0);
+		}
+		command_buffer.endRenderPass();
+	}
 	command_buffer.end();
 }
 
