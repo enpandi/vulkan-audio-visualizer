@@ -6,9 +6,10 @@
 namespace av {
 	class Recorder {
 	public:
-		float *sample_history_begin, *sample_history_end;
+		// todo const
+		float *sample_history_begin, *sample_history_end, *sample_history_ptr;
 
-		explicit Recorder(size_t sample_history_length);
+		explicit Recorder(size_t min_history_samples);
 
 		~Recorder();
 
@@ -21,9 +22,9 @@ namespace av {
 		[[nodiscard]] float get_sample_rate() const;
 
 	private:
-		float *sample_history, *sample_history_ptr;
 		ma_device device;
 		ma_uint32 const &frames_per_period = device.capture.internalPeriodSizeInFrames;
+		float *sample_history;
 
 		// when there's new audio, this function will get called
 		static void data_callback(ma_device *pDevice, void *pOutput, void const *pInput, ma_uint32 frameCount);
