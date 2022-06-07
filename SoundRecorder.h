@@ -1,17 +1,17 @@
-#ifndef AUDIO_VISUALIZER_RECORDER_H
-#define AUDIO_VISUALIZER_RECORDER_H
+#ifndef AUDIO_VISUALIZER_SOUNDRECORDER_H
+#define AUDIO_VISUALIZER_SOUNDRECORDER_H
 
 #include <miniaudio/miniaudio.h>
 
 namespace av {
-	class Recorder {
+	class SoundRecorder {
 	public:
 		// todo const
 		float *sample_history_begin, *sample_history_end, *sample_history_ptr;
 
-		explicit Recorder(size_t min_history_samples);
+		explicit SoundRecorder(size_t min_history_samples);
 
-		~Recorder();
+		~SoundRecorder();
 
 		static void print_recording_devices();
 
@@ -31,4 +31,4 @@ namespace av {
 	};
 }
 
-#endif //AUDIO_VISUALIZER_RECORDER_H
+#endif //AUDIO_VISUALIZER_SOUNDRECORDER_H

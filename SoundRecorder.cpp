@@ -1,10 +1,10 @@
-#include "Recorder.h"
+#include "SoundRecorder.h"
 
 #include <iostream>
 
 // useful: https://miniaudio.docsforge.com/master/api/ma_device/
 
-av::Recorder::Recorder(size_t min_history_samples) {
+av::SoundRecorder::SoundRecorder(size_t min_history_samples) {
 	ma_device_config config = ma_device_config_init(ma_device_type_capture);
 	config.sampleRate = 0;
 	config.dataCallback = data_callback;
@@ -21,12 +21,12 @@ av::Recorder::Recorder(size_t min_history_samples) {
 	sample_history_end = sample_history_begin + sample_history_length;
 }
 
-av::Recorder::~Recorder() {
+av::SoundRecorder::~SoundRecorder() {
 	delete[] sample_history;
 	ma_device_uninit(&device);
 }
 
-void av::Recorder::print_recording_devices() {
+void av::SoundRecorder::print_recording_devices() {
 	ma_context context;
 	if (ma_context_init(nullptr, 0, nullptr, &context) != MA_SUCCESS)
 		throw std::runtime_error("miniaudio failed to initialize context");
@@ -47,26 +47,26 @@ void av::Recorder::print_recording_devices() {
 	}
 }
 
-void av::Recorder::start() {
+void av::SoundRecorder::start() {
 	if (ma_device_start(&device) != MA_SUCCESS)
 		throw std::runtime_error("miniaudio failed to start device");
 }
 
-void av::Recorder::stop() {
+void av::SoundRecorder::stop() {
 	if (ma_device_stop(&device) != MA_SUCCESS)
 		throw std::runtime_error("miniaudio failed to stop device");
 }
 
-float av::Recorder::get_sample_rate() const { return static_cast<float>(device.sampleRate); }
+float av::SoundRecorder::get_sample_rate() const { return static_cast<float>(device.sampleRate); }
 
-void av::Recorder::data_callback(
+void av::SoundRecorder::data_callback(
 	ma_device *pDevice,
 	void *const pOutput,
 	void const *const pInput,
 	ma_uint32 frameCount
 ) {
 //	todo maybe implement downmixing manually: https://dsp.stackexchange.com/q/3581
-	auto *rec = static_cast<Recorder *>(pDevice->pUserData);
+	auto *rec = static_cast<SoundRecorder *>(pDevice->pUserData);
 	float *sample_history_ptr_new = rec->sample_history_ptr + frameCount;
 	if (sample_history_ptr_new >= rec->sample_history_end) {
 		rec->sample_history_ptr = rec->sample_history_begin;
