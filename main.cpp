@@ -1,5 +1,5 @@
 #include "Renderer.h"
-#include "Recorder.h"
+#include "SoundRecorder.h"
 
 #include <cmath>
 #include <iostream>
@@ -105,7 +105,7 @@ std::vector<float> generate_goertzel_constants(std::vector<long double> const &f
 
 std::vector<float> s0, s1, s2;
 std::vector<float> mag; // squared magnitudes (the outputs of the goertzel algorithm)
-void compute_goertzel(av::Recorder &rec, std::vector<float> const &goertzel_constants) {
+void compute_goertzel(av::SoundRecorder &rec, std::vector<float> const &goertzel_constants) {
 	// todo SSE/AVX ? also check if the compiler does it automatically
 /*
 	for (size_t i = 0; i < num_freqs; ++i) {
@@ -204,7 +204,7 @@ int main() {
 		std::vector<long double> frequencies = generate_frequencies(lo_frequency, hi_frequency, freqs_per_octave);
 		size_t num_freqs = frequencies.size();
 		std::vector<float> y_values = generate_y_values(num_freqs);
-		av::Recorder rec(num_history_samples);
+		av::SoundRecorder rec(num_history_samples);
 		std::vector<float> goertzel_constants = generate_goertzel_constants(frequencies, rec.get_sample_rate());
 		{
 			std::cout << "frequencies:";
@@ -276,7 +276,7 @@ int main() {
 		std::chrono::steady_clock::time_point frame_start = std::chrono::steady_clock::now();
 		std::chrono::steady_clock::time_point rainbow_stage_start = frame_start;
 		float max_mag = 0.0f;
-		size_t rainbow_offset = 0; // cycle through the colors
+//		size_t rainbow_offset = 0; // cycle through the colors
 		while (presenter.is_running()) {
 
 			timer::start();
@@ -310,9 +310,9 @@ int main() {
 				).count() < target_nanoseconds_per_frame);
 			frame_start = frame_end;
 
-			if (std::chrono::duration_cast<std::chrono::nanoseconds>(
+			if (static_cast<unsigned long long>(std::chrono::duration_cast<std::chrono::nanoseconds>(
 				(frame_end = std::chrono::steady_clock::now()) - rainbow_stage_start
-			).count() > target_nanoseconds_per_rainbow_cycle / rainbow.size()) {
+			).count()) > target_nanoseconds_per_rainbow_cycle / rainbow.size()) {
 				rainbow_stage_start = frame_end;
 //				++rainbow_offset;
 			}
