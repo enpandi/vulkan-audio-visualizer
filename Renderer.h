@@ -1,8 +1,14 @@
 #ifndef AUDIO_VISUALIZER_RENDERER_H
 #define AUDIO_VISUALIZER_RENDERER_H
 
-#include "pch.h"
-///////
+#define VULKAN_HPP_NO_CONSTRUCTORS
+#define VULKAN_HPP_NO_SETTERS
+#define VKFW_NO_STRUCT_CONSTRUCTORS
+#include <vkfw/vkfw.hpp>
+#include <vulkan/vulkan_raii.hpp>
+
+#include <optional>
+
 namespace av {
 	class Renderer {
 	public:

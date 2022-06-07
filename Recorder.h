@@ -1,7 +1,7 @@
 #ifndef AUDIO_VISUALIZER_RECORDER_H
 #define AUDIO_VISUALIZER_RECORDER_H
 
-#include "pch.h"
+#include <miniaudio/miniaudio.h>
 
 namespace av {
 	class Recorder {

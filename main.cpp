@@ -1,7 +1,9 @@
 #include "Renderer.h"
 #include "Recorder.h"
 
-#include "pch.h"
+#include <cmath>
+#include <iostream>
+
 
 constexpr long double lo_frequency = 55.0l;
 constexpr long double hi_frequency = 3520.0l;
@@ -274,7 +276,7 @@ int main() {
 		std::chrono::steady_clock::time_point frame_start = std::chrono::steady_clock::now();
 		std::chrono::steady_clock::time_point rainbow_stage_start = frame_start;
 		float max_mag = 0.0f;
-//		size_t rainbow_offset = 0; // cycle through the colors
+		size_t rainbow_offset = 0; // cycle through the colors
 		while (presenter.is_running()) {
 
 			timer::start();
@@ -308,9 +310,9 @@ int main() {
 				).count() < target_nanoseconds_per_frame);
 			frame_start = frame_end;
 
-			if (static_cast<unsigned long long>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+			if (std::chrono::duration_cast<std::chrono::nanoseconds>(
 				(frame_end = std::chrono::steady_clock::now()) - rainbow_stage_start
-			).count()) > target_nanoseconds_per_rainbow_cycle / rainbow.size()) {
+			).count() > target_nanoseconds_per_rainbow_cycle / rainbow.size()) {
 				rainbow_stage_start = frame_end;
 //				++rainbow_offset;
 			}

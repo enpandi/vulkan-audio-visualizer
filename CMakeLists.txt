@@ -1,12 +1,15 @@
 cmake_minimum_required(VERSION 3.12)
 project(audio_visualizer)
-add_executable(${PROJECT_NAME} main.cpp Renderer.cpp Recorder.cpp miniaudio_implementation.c)
 
-target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_20)
-target_compile_options(${PROJECT_NAME} PUBLIC -Wall -Wextra)
-target_compile_options(${PROJECT_NAME} PUBLIC $<$<CONFIG:DEBUG>:-O0 -Og -DDEBUG>)
-target_compile_options(${PROJECT_NAME} PUBLIC $<$<CONFIG:RELEASE>:-O2>)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra")
+set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O0 -Og -DDEBUG")
+set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O2")
 # -ftime-report to profile the compilation process
+# -fno-stack-protector to allow compatibility with precompiled headers (maybe?)
+set(CMAKE_CXX_STANDARD 20)
+
+add_executable(${PROJECT_NAME} main.cpp Renderer.cpp miniaudio_implementation.c Recorder.cpp)
+
 
 # CMake function for shaders
 # https://github.com/ARM-software/vulkan-sdk/blob/master/Sample.cmake
@@ -50,12 +53,12 @@ endfunction(add_shader)
 add_shader(${PROJECT_NAME} shader.vert)
 add_shader(${PROJECT_NAME} shader.frag)
 
+
+
 # Vulkan
-set(Vulkan_LIBRARY $ENV{VULKAN_SDK}/Lib/vulkan-1.lib) # this should not be necessary in a good CMake
 find_package(Vulkan REQUIRED)
 target_include_directories(${PROJECT_NAME} PUBLIC ${Vulkan_INCLUDE_DIRS})
 target_link_libraries(${PROJECT_NAME} ${Vulkan_LIBRARIES})
-message(NOTICE ${Vulkan_LIBRARY})
 
 # GLFW
 # https://www.glfw.org/docs/3.3/build_guide.html#build_link_cmake_source
@@ -68,8 +71,11 @@ target_link_libraries(${PROJECT_NAME} glfw)
 # miniaudio and vkfw and vulkan-hpp and ... ?
 target_include_directories(${PROJECT_NAME} PUBLIC lib/include)
 
-target_precompile_headers(${PROJECT_NAME} PUBLIC
-	$<$<COMPILE_LANGUAGE:CXX>:"${CMAKE_CURRENT_SOURCE_DIR}/pch.h">
-)
+
+#target_precompile_headers(${PROJECT_NAME} PRIVATE
+#	${Vulkan_INCLUDE_DIRS}/vulkan/vulkan.h
+#)
+#target_precompile_headers(${PROJECT_NAME} PRIVATE precompile_vulkan.h)
+# todo figure out precompiled headers; apparently address randomization interferes, and maybe it's MinGW
 
 # todo github fetching?
