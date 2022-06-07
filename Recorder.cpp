@@ -1,7 +1,5 @@
 #include "Recorder.h"
 
-#include <iostream>
-
 // useful: https://miniaudio.docsforge.com/master/api/ma_device/
 
 av::Recorder::Recorder(size_t min_history_samples) {

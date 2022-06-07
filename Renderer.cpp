@@ -1,12 +1,5 @@
 #include "Renderer.h"
 
-#include <fstream>
-#include <iostream>
-#include <ranges>
-#include <set>
-
-// todo MORE INCLUDES MAY BE NECESSARY ON OTHER PLATFORMS IDK GOTTA TEST
-
 // function definitions are ordered the same way they are in Renderer.h (or at least they should be)
 
 constexpr vk::VertexInputBindingDescription av::Renderer::Vertex::get_binding_description() {
