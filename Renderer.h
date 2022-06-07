@@ -1,6 +1,8 @@
 #ifndef AUDIO_VISUALIZER_RENDERER_H
 #define AUDIO_VISUALIZER_RENDERER_H
 
+#include "Vertex.h"
+
 #define VULKAN_HPP_NO_CONSTRUCTORS
 #define VULKAN_HPP_NO_SETTERS
 #define VKFW_NO_STRUCT_CONSTRUCTORS
@@ -12,21 +14,6 @@
 namespace av {
 	class Renderer {
 	public:
-
-		struct Vertex {
-			struct Position {
-				float x, y;
-			} position;
-			struct Color {
-				float r, g, b;
-			} color;
-			float color_multiplier;
-		private:
-			friend class Renderer; // don't know if friending is the best way to structure things
-			static constexpr vk::VertexInputBindingDescription get_binding_description();
-			static constexpr std::array<vk::VertexInputAttributeDescription, 3> get_attribute_descriptions();
-		};
-
 
 		Renderer(size_t width, size_t height, std::string const &title, bool const &floating,
 		         std::vector<Vertex> const &vertices);

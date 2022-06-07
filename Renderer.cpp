@@ -9,37 +9,6 @@
 
 // function definitions are ordered the same way they are in Renderer.h (or at least they should be)
 
-constexpr vk::VertexInputBindingDescription av::Renderer::Vertex::get_binding_description() {
-	return {
-		.binding = 0,
-		.stride = sizeof(Vertex),
-		.inputRate = vk::VertexInputRate::eVertex,
-	};
-}
-
-constexpr std::array<vk::VertexInputAttributeDescription, 3> av::Renderer::Vertex::get_attribute_descriptions() {
-	return {
-		vk::VertexInputAttributeDescription{
-			.location = 0,
-			.binding = 0,
-			.format = vk::Format::eR32G32Sfloat,
-			.offset = offsetof(Vertex, position),
-		},
-		vk::VertexInputAttributeDescription{
-			.location = 1,
-			.binding = 0,
-			.format = vk::Format::eR32G32B32Sfloat,
-			.offset = offsetof(Vertex, color),
-		},
-		vk::VertexInputAttributeDescription{
-			.location = 2,
-			.binding = 0,
-			.format = vk::Format::eR32Sfloat,
-			.offset = offsetof(Vertex, color_multiplier),
-		},
-	};
-}
-
 std::optional<av::Renderer::QueueFamilyIndices> av::Renderer::QueueFamilyIndices::get_queue_family_indices(
 	vk::raii::PhysicalDevice const &physical_device,
 	vk::raii::SurfaceKHR const &surface
@@ -450,13 +419,11 @@ vk::raii::Pipeline av::Renderer::create_pipeline(
 		.pName = "main",
 	};
 	std::array pipeline_shader_stage_create_infos{vertex_shader_stage_create_info, fragment_shader_stage_info};
-	vk::VertexInputBindingDescription vertex_input_binding_description = Vertex::get_binding_description();
-	std::array vertex_input_attribute_descriptions = Vertex::get_attribute_descriptions();
 	vk::PipelineVertexInputStateCreateInfo pipeline_vertex_input_state_create_info{
 		.vertexBindingDescriptionCount = 1,
-		.pVertexBindingDescriptions = &vertex_input_binding_description,
-		.vertexAttributeDescriptionCount = vertex_input_attribute_descriptions.size(),
-		.pVertexAttributeDescriptions = vertex_input_attribute_descriptions.data(),
+		.pVertexBindingDescriptions = &Vertex::binding_description,
+		.vertexAttributeDescriptionCount = Vertex::attribute_descriptions.size(),
+		.pVertexAttributeDescriptions = Vertex::attribute_descriptions.data(),
 	};
 	vk::PipelineInputAssemblyStateCreateInfo pipeline_input_assembly_state_create_info{
 		.topology = vk::PrimitiveTopology::eTriangleStrip,

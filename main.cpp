@@ -154,8 +154,8 @@ void compute_goertzel(av::SoundRecorder &rec, std::vector<float> const &goertzel
 	}
 }
 
-std::vector<av::Renderer::Vertex::Color> make_rainbow(size_t n) {
-	std::vector<av::Renderer::Vertex::Color> rainbow(n);
+std::vector<av::Vertex::Color> make_rainbow(size_t n) {
+	std::vector<av::Vertex::Color> rainbow(n);
 	for (size_t i = 0; i < n; ++i) {
 		float h = i * 6.0l / n;
 		switch ((size_t) h) {
@@ -225,7 +225,7 @@ int main() {
 		s2.resize(num_freqs);
 		mag.resize(num_freqs);
 
-		using Vertex = av::Renderer::Vertex;
+		using Vertex = av::Vertex;
 
 		std::vector<Vertex::Color> rainbow = make_rainbow(freqs_per_octave);
 
