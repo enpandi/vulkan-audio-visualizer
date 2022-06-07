@@ -1,10 +1,10 @@
 cmake_minimum_required(VERSION 3.12)
 project(audio_visualizer)
 add_executable(${PROJECT_NAME}
-	main.cpp
-	Renderer.cpp
-	SoundRecorder.cpp
 	miniaudio_implementation.c
+	SoundRecorder.cpp
+	Renderer.cpp
+	main.cpp
 )
 
 target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_20)
