@@ -1,4 +1,4 @@
-#include "SoundRecorder.h"
+#include "SoundRecorder.hpp"
 
 #include <iostream>
 

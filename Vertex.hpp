@@ -1,9 +1,7 @@
-#ifndef AUDIO_VISUALIZER_VERTEX_H
-#define AUDIO_VISUALIZER_VERTEX_H
+#ifndef AUDIO_VISUALIZER_VERTEX_HPP
+#define AUDIO_VISUALIZER_VERTEX_HPP
 
-#define VULKAN_HPP_NO_CONSTRUCTORS
-#define VULKAN_HPP_NO_SETTERS
-#include <vulkan/vulkan.hpp>
+#include "graphics_headers.hpp"
 #include <array>
 
 namespace av {
@@ -48,4 +46,4 @@ namespace av {
 	};
 }
 
-#endif //AUDIO_VISUALIZER_VERTEX_H
+#endif //AUDIO_VISUALIZER_VERTEX_HPP

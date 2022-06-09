@@ -1,9 +1,14 @@
-#include "Renderer.h"
-#include "SoundRecorder.h"
+#include "Renderer.hpp"
+#include "SoundRecorder.hpp"
 
+#include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <exception>
 #include <iostream>
-
+#include <ranges>
+#include <system_error>
+#include <vector>
 
 constexpr long double lo_frequency = 55.0l;
 constexpr long double hi_frequency = 3520.0l;
@@ -200,6 +205,7 @@ static_assert(0.0f < dampening_factor && dampening_factor < 1.0f);
 
 int main() {
 	try {
+		std::cout<<"HIIII"<<std::endl;
 		// todo adjust these
 		std::vector<long double> frequencies = generate_frequencies(lo_frequency, hi_frequency, freqs_per_octave);
 		size_t num_freqs = frequencies.size();
@@ -267,7 +273,7 @@ int main() {
 		// a lot of this work can probably be put in the shader todo
 
 //		timer::start();
-		av::Renderer presenter(240, 800, "av", false, vertices);
+		av::Renderer renderer{vertices.size()};
 //		timer::stop();
 
 		rec.start();
@@ -277,7 +283,7 @@ int main() {
 		std::chrono::steady_clock::time_point rainbow_stage_start = frame_start;
 		float max_mag = 0.0f;
 //		size_t rainbow_offset = 0; // cycle through the colors
-		while (presenter.is_running()) {
+		while (renderer.is_running()) {
 
 			timer::start();
 
@@ -297,8 +303,8 @@ int main() {
 					vertices[i * 2 + 2].color_multiplier = vertices[i * 2 + 3].color_multiplier = 0.0f;
 			}
 
-			presenter.set_vertices(vertices.data());
-			presenter.draw_frame();
+			renderer.set_vertices(vertices);
+			renderer.draw_frame();
 
 			timer::stop();
 

@@ -1,17 +1,22 @@
 cmake_minimum_required(VERSION 3.12)
 project(audio_visualizer)
 add_executable(${PROJECT_NAME}
-	miniaudio_implementation.c
-	SoundRecorder.cpp
-	Renderer.cpp
+	Frame.cpp
+	Framebuffer.cpp
+	GraphicsDevice.cpp
+	GraphicsState.cpp
 	main.cpp
-)
+	miniaudio_implementation.c
+	Renderer.cpp
+	SoundRecorder.cpp
+	SurfaceInfo.cpp
+	VertexBuffer.cpp
+	vma_implementation.cpp
+	Window.cpp)
 
 target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_20)
 target_compile_options(${PROJECT_NAME} PUBLIC -Wall -Wextra)
-#target_compile_options(${PROJECT_NAME} PUBLIC -Wall) # MSVC
 target_compile_options(${PROJECT_NAME} PUBLIC $<$<CONFIG:DEBUG>:-O0 -Og -DDEBUG>)
-#target_compile_options(${PROJECT_NAME} PUBLIC $<$<CONFIG:DEBUG>:-Od -Zi -DDEBUG>) # MSVC
 target_compile_options(${PROJECT_NAME} PUBLIC $<$<CONFIG:RELEASE>:-O2>)
 # -ftime-report to profile the compilation process
 
@@ -21,23 +26,23 @@ function(add_shader TARGET SHADER)
 
 	# Find glslc shader compiler.
 	# On Android, the NDK includes the binary, so no external dependency.
-	if(ANDROID)
+	if (ANDROID)
 		file(GLOB glslc-folders ${ANDROID_NDK}/shader-tools/*)
 		find_program(GLSLC glslc REQUIRED HINTS ${glslc-folders})
-	else()
+	else ()
 		find_program(GLSLC glslc REQUIRED)
-	endif()
+	endif ()
 
 	# All shaders for a sample are found here.
 	set(current-shader-path ${CMAKE_CURRENT_SOURCE_DIR}/shaders/${SHADER})
 
 	# For Android, write SPIR-V files to app/assets which is then packaged into the APK.
 	# Otherwise, output in the binary directory.
-	if(ANDROID)
+	if (ANDROID)
 		set(current-output-path ${CMAKE_CURRENT_SOURCE_DIR}/app/assets/shaders/${SHADER}.spv)
-	else(ANDROID)
+	else (ANDROID)
 		set(current-output-path ${CMAKE_BINARY_DIR}/shaders/${SHADER}.spv)
-	endif(ANDROID)
+	endif (ANDROID)
 
 	# Add a custom command to compile GLSL to SPIR-V.
 	get_filename_component(current-output-dir ${current-output-path} DIRECTORY)
@@ -81,6 +86,26 @@ target_include_directories(${PROJECT_NAME} PUBLIC lib/include)
 #	$<$<COMPILE_LANGUAGE:C>:<vulkan/vulkan.h$<ANGLE-R>>
 #	$<$<COMPILE_LANGUAGE:C>:<GLFW/glfw3.h$<ANGLE-R>>
 #	$<$<COMPILE_LANGUAGE:C>:<miniaudio/miniaudio.h$<ANGLE-R>>
+#)
+#target_precompile_headers(${PROJECT_NAME} PUBLIC
+#	$<$<COMPILE_LANGUAGE:CXX>:<algorithm$<ANGLE-R>>
+#	$<$<COMPILE_LANGUAGE:CXX>:<array$<ANGLE-R>>
+#	$<$<COMPILE_LANGUAGE:CXX>:<chrono$<ANGLE-R>>
+#	$<$<COMPILE_LANGUAGE:CXX>:<cmath$<ANGLE-R>>
+#	$<$<COMPILE_LANGUAGE:CXX>:<exception$<ANGLE-R>>
+#	$<$<COMPILE_LANGUAGE:CXX>:<fstream$<ANGLE-R>>
+#	$<$<COMPILE_LANGUAGE:CXX>:<ios$<ANGLE-R>>
+#	$<$<COMPILE_LANGUAGE:CXX>:<iostream$<ANGLE-R>>
+#	$<$<COMPILE_LANGUAGE:CXX>:<limits$<ANGLE-R>>
+#	$<$<COMPILE_LANGUAGE:CXX>:<optional$<ANGLE-R>>
+#	$<$<COMPILE_LANGUAGE:CXX>:<ranges$<ANGLE-R>>
+#	$<$<COMPILE_LANGUAGE:CXX>:<span$<ANGLE-R>>
+#	$<$<COMPILE_LANGUAGE:CXX>:<stdexcept$<ANGLE-R>>
+#	$<$<COMPILE_LANGUAGE:CXX>:<string$<ANGLE-R>>
+#	$<$<COMPILE_LANGUAGE:CXX>:<system_error$<ANGLE-R>>
+#	$<$<COMPILE_LANGUAGE:CXX>:<tuple$<ANGLE-R>>
+#	$<$<COMPILE_LANGUAGE:CXX>:<utility$<ANGLE-R>>
+#	$<$<COMPILE_LANGUAGE:CXX>:<vector$<ANGLE-R>>
 #)
 
 # todo github fetching?
