@@ -29,7 +29,6 @@ namespace av {
 		void set_vertices(std::vector<Vertex> const &);
 
 		void draw_frame();
-
 	private:
 		bool framebuffer_resized = false;
 
@@ -40,18 +39,21 @@ namespace av {
 		vk::raii::SurfaceKHR const surface;
 		GraphicsDevice const gpu;
 		GraphicsState state;
-		vma::Allocator const allocator;
+//		vma::Allocator const allocator;
 		VertexBuffer vertex_buffer;
+	public:
+		Vertex *const &vertex_data{vertex_buffer.mapped_data};
+	private:
 		Frames const frames;
 
 		uint32_t current_flight_frame = 0; // for multiple frames in flight
 
 		static vk::raii::Instance create_instance(vk::raii::Context const &);
 
-		static vma::Allocator create_allocator(
-			GraphicsDevice const &,
-			vk::raii::Instance const &
-		);
+//		static vma::Allocator create_allocator(
+//			GraphicsDevice const &,
+//			vk::raii::Instance const &
+//		);
 
 		void resize();
 

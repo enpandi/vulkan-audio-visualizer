@@ -4,13 +4,13 @@
 #include "graphics_headers.hpp"
 
 namespace av {
-	struct Window : vkfw::UniqueWindow {
+	class Window : public vkfw::UniqueWindow {
 	public:
 		explicit Window(bool &framebuffer_resized);
 	private:
-		vkfw::UniqueInstance instance; // questionable
+		Window(bool &framebuffer_resized, vkfw::UniqueInstance &&);
+		vkfw::UniqueInstance const instance;
 	};
 }
-
 
 #endif //AUDIO_VISUALIZER_WINDOW_HPP

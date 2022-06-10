@@ -15,8 +15,8 @@ av::Renderer::Renderer(size_t const &num_vertices)
 	, surface{instance, vkfw::createWindowSurface(*instance, *window)}
 	, gpu{instance, surface}
 	, state{surface, gpu, window->getFramebufferSize()}
-	, allocator{create_allocator(gpu, instance)}
-	, vertex_buffer{num_vertices, gpu, allocator}
+//	, allocator{create_allocator(gpu, instance)}
+	, vertex_buffer{num_vertices, gpu/*, allocator*/}
 	, frames{constants::MAX_FRAMES_IN_FLIGHT, gpu} {}
 
 av::Renderer::~Renderer() {
@@ -97,15 +97,15 @@ vk::raii::Instance av::Renderer::create_instance(vk::raii::Context const &contex
 	return {context, instance_create_info};
 }
 
-vma::Allocator av::Renderer::create_allocator(GraphicsDevice const &gpu, vk::raii::Instance const &instance) {
-	vma::AllocatorCreateInfo allocator_create_info{
-		.physicalDevice = *gpu.physical_device,
-		.device = *gpu.device,
-		.instance = *instance,
-		.vulkanApiVersion = constants::VK_API_VERSION,
-	};
-	return vma::createAllocator(allocator_create_info);
-}
+//vma::Allocator av::Renderer::create_allocator(GraphicsDevice const &gpu, vk::raii::Instance const &instance) {
+//	vma::AllocatorCreateInfo allocator_create_info{
+//		.physicalDevice = *gpu.physical_device,
+//		.device = *gpu.device,
+//		.instance = *instance,
+//		.vulkanApiVersion = constants::VK_API_VERSION,
+//	};
+//	return vma::createAllocator(allocator_create_info);
+//}
 
 void av::Renderer::resize() {
 	for (;;) {

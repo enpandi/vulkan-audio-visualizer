@@ -2,8 +2,8 @@
 #define AUDIO_VISUALIZER_CONSTANTS_HPP
 
 //#include <vulkan/vulkan_core.h> // is this allowed?
-//#include "graphics_headers.hpp"
-#include <vulkan/vulkan.h>
+#include "graphics_headers.hpp"
+//#include <vulkan/vulkan.h>
 
 #include <array>
 #include <string>

@@ -205,7 +205,7 @@ static_assert(0.0f < dampening_factor && dampening_factor < 1.0f);
 
 int main() {
 	try {
-		std::cout<<"HIIII"<<std::endl;
+		std::cout << "HIIII" << std::endl;
 		// todo adjust these
 		std::vector<long double> frequencies = generate_frequencies(lo_frequency, hi_frequency, freqs_per_octave);
 		size_t num_freqs = frequencies.size();
@@ -235,23 +235,23 @@ int main() {
 
 		std::vector<Vertex::Color> rainbow = make_rainbow(freqs_per_octave);
 
-		std::vector<Vertex> vertices;
-		vertices.reserve(num_freqs * 2 + 4);
-		vertices.emplace_back(Vertex{{-1.0f, +1.0f},
-		                             {},
-		                             0.0f,});
-		vertices.emplace_back(Vertex{{+1.0f, +1.0f},
-		                             {},
-		                             0.0f,});
+		std::vector<Vertex> vertex_vector;
+		vertex_vector.reserve(num_freqs * 2 + 4);
+		vertex_vector.emplace_back(Vertex{{-1.0f, +1.0f},
+		                                  {},
+		                                  0.0f,});
+		vertex_vector.emplace_back(Vertex{{+1.0f, +1.0f},
+		                                  {},
+		                                  0.0f,});
 		for (size_t i = 0; i < num_freqs; ++i) {
-			vertices.emplace_back(
+			vertex_vector.emplace_back(
 				Vertex{
 					{-1.0f, y_values[i]},
 					rainbow[i % freqs_per_octave],
 					0.0f,
 				}
 			);
-			vertices.emplace_back(
+			vertex_vector.emplace_back(
 				Vertex{
 					{+1.0f, y_values[i]},
 					rainbow[i % freqs_per_octave],
@@ -259,21 +259,23 @@ int main() {
 				}
 			);
 		}
-		vertices.emplace_back(Vertex{{-1.0f, -1.0f},
-		                             {},
-		                             0.0f,});
-		vertices.emplace_back(Vertex{{+1.0f, -1.0f},
-		                             {},
-		                             0.0f,});
+		vertex_vector.emplace_back(Vertex{{-1.0f, -1.0f},
+		                                  {},
+		                                  0.0f,});
+		vertex_vector.emplace_back(Vertex{{+1.0f, -1.0f},
+		                                  {},
+		                                  0.0f,});
 
-		for (auto &&v : vertices) {
+		for (auto &&v : vertex_vector) {
 			std::cout << v.position.x << ',' << v.position.y << '\n';
 		}
 
 		// a lot of this work can probably be put in the shader todo
 
 //		timer::start();
-		av::Renderer renderer{vertices.size()};
+		av::Renderer renderer{vertex_vector.size()};
+		Vertex *const vertex_data = renderer.vertex_data;
+		std::copy(vertex_vector.begin(), vertex_vector.end(), vertex_data);
 //		timer::stop();
 
 		rec.start();
@@ -298,12 +300,13 @@ int main() {
 				           || (i == num_freqs - 1 && mag[num_freqs - 1] > mag[num_freqs - 2])
 				           || (mag[i] > mag[i - 1] && mag[i] > mag[i + 1]);
 				if (yes || true) {
-					vertices[i * 2 + 2].color_multiplier = vertices[i * 2 + 3].color_multiplier = mag[i] / max_mag;
+					vertex_data[i * 2 + 2].color_multiplier = vertex_data[i * 2 + 3].color_multiplier =
+						mag[i] / max_mag;
 				} else
-					vertices[i * 2 + 2].color_multiplier = vertices[i * 2 + 3].color_multiplier = 0.0f;
+					vertex_data[i * 2 + 2].color_multiplier = vertex_data[i * 2 + 3].color_multiplier = 0.0f;
 			}
 
-			renderer.set_vertices(vertices);
+//			renderer.set_vertices(vertex_vector);
 			renderer.draw_frame();
 
 			timer::stop();

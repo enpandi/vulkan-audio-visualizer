@@ -8,8 +8,8 @@ av::Frame::Frame(
 	GraphicsDevice const &gpu
 )
 	: _command_buffer{std::move(command_buffer)}
-	, _draw_complete{gpu.device, {}}
-	, _present_complete{gpu.device, {}}
+	, _draw_complete{gpu.device, vk::SemaphoreCreateInfo{}}
+	, _present_complete{gpu.device, vk::SemaphoreCreateInfo{}}
 	, _in_flight{gpu.device, {.flags = vk::FenceCreateFlagBits::eSignaled}} {}
 
 av::Frames::Frames(
