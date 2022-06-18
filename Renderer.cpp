@@ -104,6 +104,7 @@ namespace av {
 			vkfw::waitEvents();
 			// if window is minimized, wait until it is not minimized
 		}
+		gpu.device.waitIdle();
 		state.recreate(surface, gpu, window->getFramebufferSize());
 		framebuffer_resized = false;
 	}
