@@ -34,7 +34,6 @@ namespace av {
 		GraphicsDevice const &gpu,
 		std::tuple<size_t, size_t> const &framebuffer_size
 	) {
-		gpu.device.waitIdle();
 		// placement new https://stackoverflow.com/a/54645552
 		std::destroy_at(&_surface_info);
 		std::construct_at(&_surface_info, surface, gpu, framebuffer_size);
@@ -200,7 +199,7 @@ namespace av {
 //		.cullMode = vk::CullModeFlagBits::eNone,
 //		.frontFace = vk::FrontFace::eClockwise,
 //		.depthBiasEnable = false,
-			.lineWidth = 4.0f,
+			.lineWidth = 1.0f,
 		};
 		vk::PipelineMultisampleStateCreateInfo pipeline_multisample_state_create_info{
 			.rasterizationSamples = vk::SampleCountFlagBits::e1,
