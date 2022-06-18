@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.12)
 project(audio_visualizer)
+
 add_executable(${PROJECT_NAME}
 	Frame.cpp
 	Framebuffer.cpp
@@ -12,11 +13,12 @@ add_executable(${PROJECT_NAME}
 	SurfaceInfo.cpp
 	VertexBuffer.cpp
 	vma_implementation.cpp
-	Window.cpp)
+	Window.cpp
+	Allocator.cpp Allocator.hpp)
 
 target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_20)
 target_compile_options(${PROJECT_NAME} PUBLIC -Wall -Wextra)
-target_compile_options(${PROJECT_NAME} PUBLIC $<$<CONFIG:DEBUG>:-O0 -Og -DDEBUG>)
+target_compile_options(${PROJECT_NAME} PUBLIC $<$<CONFIG:DEBUG>:-O0 -g -DDEBUG>)
 target_compile_options(${PROJECT_NAME} PUBLIC $<$<CONFIG:RELEASE>:-O2>)
 # -ftime-report to profile the compilation process
 
@@ -68,6 +70,8 @@ find_package(Vulkan REQUIRED)
 target_include_directories(${PROJECT_NAME} PUBLIC ${Vulkan_INCLUDE_DIRS})
 target_link_libraries(${PROJECT_NAME} ${Vulkan_LIBRARIES})
 message(NOTICE ${Vulkan_LIBRARY})
+message(NOTICE ${Vulkan_INCLUDE_DIRS})
+message(NOTICE ${Vulkan_LIBRARIES})
 
 # GLFW
 # https://www.glfw.org/docs/3.3/build_guide.html#build_link_cmake_source
@@ -79,6 +83,9 @@ target_link_libraries(${PROJECT_NAME} glfw)
 
 # miniaudio and vkfw and vulkan-hpp and ... ?
 target_include_directories(${PROJECT_NAME} PUBLIC lib/include)
+
+# todo github fetching?
+
 
 # precompiled headers suck (ASLR bugs, undocumented size limit for GCH file, etc)
 #target_precompile_headers(${PROJECT_NAME} PUBLIC
@@ -107,5 +114,3 @@ target_include_directories(${PROJECT_NAME} PUBLIC lib/include)
 #	$<$<COMPILE_LANGUAGE:CXX>:<utility$<ANGLE-R>>
 #	$<$<COMPILE_LANGUAGE:CXX>:<vector$<ANGLE-R>>
 #)
-
-# todo github fetching?

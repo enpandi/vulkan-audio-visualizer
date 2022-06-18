@@ -45,6 +45,6 @@ namespace av {
 			uint32_t graphics_queue_family_index
 		);
 	};
-}
+} // av
 
 #endif //AUDIO_VISUALIZER_GRAPHICSDEVICE_HPP

@@ -31,6 +31,6 @@ namespace av {
 			std::tuple<size_t, size_t> const &framebuffer_size
 		);
 	};
-}
+} // av
 
 #endif //AUDIO_VISUALIZER_SURFACEINFO_HPP

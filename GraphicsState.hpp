@@ -59,6 +59,6 @@ namespace av {
 			vk::raii::RenderPass const &
 		);
 	};
-}
+} // av
 
 #endif //AUDIO_VISUALIZER_GRAPHICSSTATE_HPP

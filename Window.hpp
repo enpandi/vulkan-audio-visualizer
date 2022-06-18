@@ -7,10 +7,7 @@ namespace av {
 	class Window : public vkfw::UniqueWindow {
 	public:
 		explicit Window(bool &framebuffer_resized);
-	private:
-		Window(bool &framebuffer_resized, vkfw::UniqueInstance &&);
-		vkfw::UniqueInstance const instance;
 	};
-}
+} // av
 
 #endif //AUDIO_VISUALIZER_WINDOW_HPP

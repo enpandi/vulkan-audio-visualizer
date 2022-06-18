@@ -30,6 +30,6 @@ namespace av {
 		Frames(size_t num_frames, GraphicsDevice const &);
 		using std::vector<Frame>::operator[];
 	};
-}
+} // av
 
 #endif //AUDIO_VISUALIZER_FRAME_HPP

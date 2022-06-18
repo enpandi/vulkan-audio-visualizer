@@ -29,6 +29,6 @@ namespace av {
 		);
 		using std::vector<Framebuffer>::operator[];
 	};
-}
+} // av
 
 #endif //AUDIO_VISUALIZER_FRAMEBUFFER_HPP

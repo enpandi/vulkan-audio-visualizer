@@ -29,6 +29,6 @@ namespace av {
 		// when there's new audio, this function will get called
 		static void data_callback(ma_device *pDevice, void *pOutput, void const *pInput, ma_uint32 frameCount);
 	};
-}
+} // av
 
 #endif //AUDIO_VISUALIZER_SOUNDRECORDER_HPP

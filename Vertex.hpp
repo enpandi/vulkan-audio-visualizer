@@ -44,6 +44,6 @@ namespace av {
 			.offset = offsetof(Vertex, color_multiplier),
 		},
 	};
-}
+} // av
 
 #endif //AUDIO_VISUALIZER_VERTEX_HPP

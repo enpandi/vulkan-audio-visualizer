@@ -1,3 +1,4 @@
+#include "constants.hpp"
 #include "Renderer.hpp"
 #include "SoundRecorder.hpp"
 
@@ -6,15 +7,16 @@
 #include <cmath>
 #include <exception>
 #include <iostream>
+#include <numeric>
 #include <ranges>
 #include <system_error>
 #include <vector>
 
 constexpr long double lo_frequency = 55.0l;
-constexpr long double hi_frequency = 3520.0l;
+constexpr long double hi_frequency = 4186.009044809578l;
 constexpr unsigned int num_goertzel_samples = 480 * 16;
-constexpr unsigned int num_history_samples = num_goertzel_samples * 16;
-constexpr unsigned int freqs_per_octave = 48;
+constexpr unsigned int num_history_samples = 480000;
+constexpr unsigned int freqs_per_octave = 12 * 2;
 constexpr float dampening_factor = 0.95f; // higher values mean the max volume (for normalization) will decrease slower
 constexpr unsigned int target_fps = 90;
 
@@ -208,6 +210,7 @@ int main() {
 		std::cout << "HIIII" << std::endl;
 		// todo adjust these
 		std::vector<long double> frequencies = generate_frequencies(lo_frequency, hi_frequency, freqs_per_octave);
+//		std::ranges::reverse(frequencies);
 		size_t num_freqs = frequencies.size();
 		std::vector<float> y_values = generate_y_values(num_freqs);
 		av::SoundRecorder rec(num_history_samples);
@@ -233,9 +236,31 @@ int main() {
 
 		using Vertex = av::Vertex;
 
-		std::vector<Vertex::Color> rainbow = make_rainbow(freqs_per_octave);
-
 		std::vector<Vertex> vertex_vector;
+		std::vector<av::constants::index_t> index_vector;
+
+#define CIRCLE
+#ifdef CIRCLE
+		std::vector<Vertex::Color> rainbow = make_rainbow(num_freqs);
+		vertex_vector.reserve(num_freqs);
+		for (size_t i = 1; i <= num_freqs; ++i) {
+			long double scalar = std::sqrt(static_cast<long double>(i) / num_freqs);
+			vertex_vector.emplace_back(
+				Vertex{
+					{scalar * std::cos(tau * i / freqs_per_octave), scalar * std::sin(tau * i / freqs_per_octave)},
+//					rainbow[i % freqs_per_octave],
+//					{1.0f, 1.0f, 1.0f,},
+					rainbow[i - 1],
+					0.0f,
+				}
+			);
+		}
+		for (size_t i = 0; i + freqs_per_octave < num_freqs; ++i) {
+			index_vector.emplace_back(i);
+			index_vector.emplace_back(i + freqs_per_octave);
+		}
+#else
+		std::vector<Vertex::Color> rainbow = make_rainbow(freqs_per_octave);
 		vertex_vector.reserve(num_freqs * 2 + 4);
 		vertex_vector.emplace_back(Vertex{{-1.0f, +1.0f},
 		                                  {},
@@ -265,6 +290,9 @@ int main() {
 		vertex_vector.emplace_back(Vertex{{+1.0f, -1.0f},
 		                                  {},
 		                                  0.0f,});
+		index_vector.resize(vertex_vector.size());
+		std::iota(index_vector.begin(), index_vector.end(), 0);
+#endif
 
 		for (auto &&v : vertex_vector) {
 			std::cout << v.position.x << ',' << v.position.y << '\n';
@@ -273,9 +301,11 @@ int main() {
 		// a lot of this work can probably be put in the shader todo
 
 //		timer::start();
-		av::Renderer renderer{vertex_vector.size()};
-		Vertex *const vertex_data = renderer.vertex_data;
-		std::copy(vertex_vector.begin(), vertex_vector.end(), vertex_data);
+		av::Renderer renderer{vertex_vector.size(), index_vector.size()};
+		std::span<Vertex> const &vertex_data = renderer.vertex_data;
+		std::span<av::constants::index_t> const &index_data = renderer.index_data;
+		std::ranges::copy(vertex_vector, vertex_data.begin());
+		std::ranges::copy(index_vector, index_data.begin());
 //		timer::stop();
 
 		rec.start();
@@ -292,6 +322,7 @@ int main() {
 			compute_goertzel(rec, goertzel_constants);
 			for (size_t i = 0; i < num_freqs; ++i)
 				mag[i] *= frequencies[i];
+//				mag[i] = 1.0f;
 			max_mag = std::max(max_mag * dampening_factor, *std::max_element(mag.begin(), mag.end()));
 			for (size_t i = 0; i < num_freqs; ++i) {
 //				Vertex::Color const &color = rainbow[(i + rainbow_offset) % rainbow.size()];
@@ -300,10 +331,18 @@ int main() {
 				           || (i == num_freqs - 1 && mag[num_freqs - 1] > mag[num_freqs - 2])
 				           || (mag[i] > mag[i - 1] && mag[i] > mag[i + 1]);
 				if (yes || true) {
+#ifdef CIRCLE
+					vertex_data[i].color_multiplier = mag[i] / max_mag;
+#else
 					vertex_data[i * 2 + 2].color_multiplier = vertex_data[i * 2 + 3].color_multiplier =
 						mag[i] / max_mag;
+#endif
 				} else
+#ifdef CIRCLE
+					vertex_data[i].color_multiplier = 0.0f;
+#else
 					vertex_data[i * 2 + 2].color_multiplier = vertex_data[i * 2 + 3].color_multiplier = 0.0f;
+#endif
 			}
 
 //			renderer.set_vertices(vertex_vector);
