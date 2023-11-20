@@ -18,7 +18,7 @@ namespace av {
 		vk::raii::RenderPass const &render_pass
 	) {
 		auto images = swapchain.getImages();
-		this->reserve(images.size());
+		reserve(images.size());
 		for (auto &&image : images) {
 			vk::ImageViewCreateInfo image_view_create_info{
 				.image = image,
@@ -50,7 +50,7 @@ namespace av {
 			};
 			vk::raii::Framebuffer framebuffer{gpu.device, framebuffer_create_info};
 			// https://stackoverflow.com/a/17011117
-			this->emplace_back(std::move(image_view), std::move(framebuffer));
+			emplace_back(std::move(image_view), std::move(framebuffer));
 		}
 	}
 } // av

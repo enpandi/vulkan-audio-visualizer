@@ -7,7 +7,7 @@
 namespace av {
 	SurfaceInfo::SurfaceInfo(
 		vk::raii::SurfaceKHR const &surface,
-		GraphicsDevice const &gpu,
+		Gpu const &gpu,
 		std::tuple<size_t, size_t> const &framebuffer_size
 	)
 		: surface_capabilities{gpu.physical_device.getSurfaceCapabilitiesKHR(*surface)}
@@ -17,7 +17,7 @@ namespace av {
 
 	vk::SurfaceFormatKHR SurfaceInfo::choose_surface_format(
 		vk::raii::SurfaceKHR const &surface,
-		GraphicsDevice const &gpu
+		Gpu const &gpu
 	) {
 		auto surface_formats = gpu.physical_device.getSurfaceFormatsKHR(*surface);
 		if (surface_formats.empty())
@@ -31,7 +31,7 @@ namespace av {
 
 	vk::PresentModeKHR SurfaceInfo::choose_present_mode(
 		vk::raii::SurfaceKHR const &surface,
-		GraphicsDevice const &gpu
+		Gpu const &gpu
 	) {
 		auto present_modes = gpu.physical_device.getSurfacePresentModesKHR(*surface);
 		if (present_modes.empty())

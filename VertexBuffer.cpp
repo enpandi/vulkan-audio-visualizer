@@ -9,8 +9,8 @@ namespace av {
 	VertexBuffer::VertexBuffer(
 		size_t num_vertices,
 		size_t num_indices,
-		GraphicsDevice const &gpu,
-		Allocator const &allocator
+		Gpu const &gpu,
+		vma::Allocator const &allocator
 	) : VertexBuffer{
 		num_vertices, num_indices,
 		gpu, allocator,
@@ -19,47 +19,40 @@ namespace av {
 
 
 	VertexBuffer::~VertexBuffer() {
-		allocator.freeMemory(allocation);
+		_allocator.freeMemory(_allocation);
 	}
-
-	/*
-	void VertexBuffer::set_vertices(std::vector<Vertex> const &vertices) {
-		num_vertices = vertices.size();
-		std::ranges::copy(vertices, vertex_data.data());
-		// todo staging buffer and custom allocator to use the mapped pointer directly
-	}
-	*/
 
 	void VertexBuffer::bind_and_draw(const vk::raii::CommandBuffer &command_buffer) const {
-		command_buffer.bindVertexBuffers(0, {*buffer}, {0});
-		command_buffer.bindIndexBuffer(*buffer, num_vertices * sizeof(Vertex), constants::vk_index_type);
-//		command_buffer.draw(num_vertices, 1, 0, 0);
-		command_buffer.drawIndexed(num_indices, 1, 0, 0, 0);
-		// todo index buffer
+		command_buffer.bindVertexBuffers(0, {*_buffer}, {0});
+		command_buffer.bindIndexBuffer(*_buffer, _num_vertices * sizeof(Vertex), constants::vk_index_type);
+		command_buffer.drawIndexed(_num_indices, 1, 0, 0, 0);
 	}
 
 	VertexBuffer::VertexBuffer(
 		size_t num_vertices,
 		size_t num_indices,
-		GraphicsDevice const &gpu,
-		Allocator const &allocator,
+		Gpu const &gpu,
+		vma::Allocator const &allocator,
 		std::tuple<vk::Buffer, vma::Allocation, void *> const &buffer_objects
 	)
-		: num_vertices{num_vertices}
-		, num_indices{num_indices}
-		, allocator{allocator}
-		, buffer{gpu.device, std::get<vk::Buffer>(buffer_objects)}
-		, allocation{std::get<vma::Allocation>(buffer_objects)}
+		: _num_vertices{num_vertices}
+		, _num_indices{num_indices}
+		, _allocator{allocator}
+		, _buffer{gpu.device, std::get<vk::Buffer>(buffer_objects)}
+		, _allocation{std::get<vma::Allocation>(buffer_objects)}
 		, _vertex_data{static_cast<Vertex *const>(std::get<void *>(buffer_objects)), num_vertices}
 		, _index_data{
-			static_cast<constants::index_t *const>(std::get<void *>(buffer_objects) + num_vertices * sizeof(Vertex)),
+			reinterpret_cast<constants::index_t *const>(
+				reinterpret_cast<Vertex *>(std::get<void *>(buffer_objects))
+				+ num_vertices
+			),
 			num_indices
 		} {}
 
 	std::tuple<vk::Buffer, vma::Allocation, void *> VertexBuffer::create_mapped_buffer(
 		size_t num_vertices,
 		size_t num_indices,
-		Allocator const &allocator
+		vma::Allocator const &allocator
 	) {
 		// todo check for alignment issues
 		vk::BufferCreateInfo buffer_create_info{

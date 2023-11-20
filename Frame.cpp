@@ -17,13 +17,13 @@ namespace av {
 		size_t num_frames,
 		const GraphicsDevice &gpu
 	) {
-		this->reserve(num_frames);
+		reserve(num_frames);
 		vk::CommandBufferAllocateInfo command_buffer_allocate_info{
 			.commandPool = *gpu.graphics_command_pool,
 			.level = vk::CommandBufferLevel::ePrimary,
-			.commandBufferCount = constants::MAX_FRAMES_IN_FLIGHT,
+			.commandBufferCount = num_frames,
 		};
 		for (auto &&command_buffer : vk::raii::CommandBuffers(gpu.device, command_buffer_allocate_info))
-			this->emplace_back(std::move(command_buffer), gpu);
+			emplace_back(std::move(command_buffer), gpu);
 	}
 } // av

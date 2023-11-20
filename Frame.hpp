@@ -1,7 +1,7 @@
 #ifndef AUDIO_VISUALIZER_FRAME_HPP
 #define AUDIO_VISUALIZER_FRAME_HPP
 
-#include "GraphicsDevice.hpp"
+#include "Gpu.hpp"
 #include "graphics_headers.hpp"
 #include <vector>
 
@@ -10,7 +10,7 @@ namespace av {
 	public:
 		Frame(
 			vk::raii::CommandBuffer &&,
-			GraphicsDevice const &
+			Gpu const &
 		);
 		vk::raii::CommandBuffer const &command_buffer{_command_buffer};
 		vk::raii::Semaphore const &draw_complete{_draw_complete};

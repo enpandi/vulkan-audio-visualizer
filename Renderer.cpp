@@ -15,9 +15,8 @@ namespace av {
 		, surface{instance, vkfw::createWindowSurface(*instance, *window)}
 		, gpu{instance, surface}
 		, state{surface, gpu, window->getFramebufferSize()}
-		, allocator{instance, gpu}
-		, vertex_buffer{num_vertices, num_indices, gpu, allocator}
-		, frames{constants::MAX_FRAMES_IN_FLIGHT, gpu} {}
+		, frames{constants::MAX_FRAMES_IN_FLIGHT, gpu}
+		, vertex_buffer{num_vertices, num_indices, gpu, gpu.allocator} {}
 
 	Renderer::~Renderer() {
 		gpu.device.waitIdle(); // wait for Vulkan processes to finish
@@ -28,7 +27,7 @@ namespace av {
 		return !window->shouldClose();
 	}
 
-// upload vertices to the vertex buffer
+// upload vertices to the vertex _buffer
 // todo this approach is probably not fast
 // todo try https://redd.it/aij7zp
 	/*void Renderer::set_vertices(std::vector<Vertex> const &vertices) {

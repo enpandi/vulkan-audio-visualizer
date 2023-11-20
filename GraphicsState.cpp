@@ -15,23 +15,23 @@
 namespace av {
 	GraphicsState::GraphicsState(
 		vk::raii::SurfaceKHR const &surface,
-		GraphicsDevice const &gpu,
+		Gpu const &gpu,
 		std::tuple<size_t, size_t> const &framebuffer_size
 	)
-		: vertex_shader_module{create_shader_module(constants::VERTEX_SHADER_FILE_NAME, gpu)}
-		, fragment_shader_module{create_shader_module(constants::FRAGMENT_SHADER_FILE_NAME, gpu)}
-		, pipeline_layout{create_pipeline_layout(gpu)}
+		: _vertex_shader_module{create_shader_module(constants::VERTEX_SHADER_FILE_NAME, gpu)}
+		, _fragment_shader_module{create_shader_module(constants::FRAGMENT_SHADER_FILE_NAME, gpu)}
+		, _pipeline_layout{create_pipeline_layout(gpu)}
 		, _surface_info{surface, gpu, framebuffer_size}
 		, _swapchain{create_swapchain(surface, gpu, surface_info, nullptr)}
 		, _render_pass{create_render_pass(gpu, surface_info)}
 		, _pipeline{create_pipeline(
-			gpu, vertex_shader_module, fragment_shader_module, pipeline_layout, surface_info, render_pass)}
+			gpu, _vertex_shader_module, _fragment_shader_module, _pipeline_layout, surface_info, render_pass)}
 		, _framebuffers{gpu, surface_info, swapchain, render_pass} {}
 
 
 	void GraphicsState::recreate(
 		vk::raii::SurfaceKHR const &surface,
-		GraphicsDevice const &gpu,
+		Gpu const &gpu,
 		std::tuple<size_t, size_t> const &framebuffer_size
 	) {
 		// placement new https://stackoverflow.com/a/54645552
@@ -40,13 +40,13 @@ namespace av {
 		_swapchain = create_swapchain(surface, gpu, _surface_info, _swapchain);
 		_render_pass = create_render_pass(gpu, _surface_info);
 		_pipeline = create_pipeline(
-			gpu, vertex_shader_module, fragment_shader_module, pipeline_layout, _surface_info, _render_pass);
+			gpu, _vertex_shader_module, _fragment_shader_module, _pipeline_layout, _surface_info, _render_pass);
 		_framebuffers = Framebuffers(gpu, surface_info, swapchain, render_pass);
 	}
 
 	vk::raii::ShaderModule GraphicsState::create_shader_module(
 		std::string const &file_name,
-		GraphicsDevice const &gpu
+		Gpu const &gpu
 	) {
 		std::ifstream file(file_name, std::ios::binary | std::ios::ate);
 		if (!file.is_open())
@@ -62,7 +62,7 @@ namespace av {
 		return {gpu.device, shader_module_create_info};
 	}
 
-	vk::raii::PipelineLayout GraphicsState::create_pipeline_layout(GraphicsDevice const &gpu) {
+	vk::raii::PipelineLayout GraphicsState::create_pipeline_layout(Gpu const &gpu) {
 		vk::PipelineLayoutCreateInfo pipeline_layout_create_info{
 			.setLayoutCount = 0,
 			.pushConstantRangeCount = 0,
@@ -72,7 +72,7 @@ namespace av {
 
 	vk::raii::SwapchainKHR GraphicsState::create_swapchain(
 		vk::raii::SurfaceKHR const &surface,
-		GraphicsDevice const &gpu,
+		Gpu const &gpu,
 		SurfaceInfo const &surface_info,
 		vk::raii::SwapchainKHR const &old_swapchain
 	) {
@@ -103,7 +103,7 @@ namespace av {
 	}
 
 	vk::raii::RenderPass GraphicsState::create_render_pass(
-		GraphicsDevice const &gpu,
+		Gpu const &gpu,
 		SurfaceInfo const &surface_info
 	) {
 		vk::AttachmentDescription attachment_description{
@@ -145,7 +145,7 @@ namespace av {
 	}
 
 	vk::raii::Pipeline GraphicsState::create_pipeline(
-		GraphicsDevice const &gpu,
+		Gpu const &gpu,
 		vk::raii::ShaderModule const &vertex_shader_module,
 		vk::raii::ShaderModule const &fragment_shader_module,
 		vk::raii::PipelineLayout const &pipeline_layout,

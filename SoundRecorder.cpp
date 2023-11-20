@@ -76,5 +76,7 @@ namespace av {
 		auto const input = static_cast<float const *>(pInput);
 		std::copy(input, input + frameCount, rec->sample_history_ptr);
 		rec->sample_history_ptr = sample_history_ptr_new;
+//		todo using rec->device.capture.pIntermediaryBuffer could save a copy
+//		todo i believe i'm using frameCount unsafely
 	}
 } // av

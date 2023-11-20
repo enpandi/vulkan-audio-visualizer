@@ -4,7 +4,7 @@ project(audio_visualizer)
 add_executable(${PROJECT_NAME}
 	Frame.cpp
 	Framebuffer.cpp
-	GraphicsDevice.cpp
+	Gpu.cpp
 	GraphicsState.cpp
 	main.cpp
 	miniaudio_implementation.c
@@ -14,7 +14,7 @@ add_executable(${PROJECT_NAME}
 	VertexBuffer.cpp
 	vma_implementation.cpp
 	Window.cpp
-	Allocator.cpp Allocator.hpp)
+)
 
 target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_20)
 target_compile_options(${PROJECT_NAME} PUBLIC -Wall -Wextra)

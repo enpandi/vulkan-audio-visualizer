@@ -1,7 +1,7 @@
 #ifndef AUDIO_VISUALIZER_FRAMEBUFFER_HPP
 #define AUDIO_VISUALIZER_FRAMEBUFFER_HPP
 
-#include "GraphicsDevice.hpp"
+#include "Gpu.hpp"
 #include "SurfaceInfo.hpp"
 #include "graphics_headers.hpp"
 #include <vector>
